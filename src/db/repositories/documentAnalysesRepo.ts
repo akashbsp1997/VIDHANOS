@@ -28,4 +28,8 @@ export const documentAnalysesRepo = {
   ): Promise<void> {
     await db.documentAnalyses.update(id, { ...input, updatedAt: Date.now() });
   },
+
+  async assignToCase(id: string, caseId: string): Promise<void> {
+    await db.documentAnalyses.update(id, { caseId, updatedAt: Date.now() });
+  },
 };

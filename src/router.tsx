@@ -21,7 +21,13 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <DashboardScreen /> },
       { path: '/cases', element: <CaseListScreen /> },
-      { path: '/cases/new', element: <CaseFormScreen /> },
+      {
+        path: '/new-matter',
+        lazy: async () => {
+          const { NewMatterScreen } = await import('@/features/newmatter/NewMatterScreen');
+          return { Component: NewMatterScreen };
+        },
+      },
       { path: '/cases/:caseId', element: <CaseDetailScreen /> },
       { path: '/cases/:caseId/edit', element: <CaseFormScreen /> },
       { path: '/cases/:caseId/hearings/new', element: <HearingFormScreen /> },

@@ -30,12 +30,12 @@ export function CaseListScreen() {
     <Screen>
       <div className="screen-header">
         <TextField label="Search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by title, forum, CNR" />
-        <Link to="/cases/new">
-          <Button label="Add Case" />
+        <Link to="/new-matter">
+          <Button label="New Matter" />
         </Link>
       </div>
       {filtered.length === 0 ? (
-        <EmptyState title="No cases yet" message="Add your first case to start tracking it." />
+        <EmptyState title="No cases yet" message="Start a New Matter to add your first case." />
       ) : (
         filtered.map((c) => (
           <ListRow

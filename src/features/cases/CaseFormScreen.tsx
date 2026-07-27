@@ -49,6 +49,7 @@ const defaultValues: CaseFormValues = {
 
 export function CaseFormScreen() {
   const { caseId } = useParams<{ caseId: string }>();
+  if (!caseId) throw new Error('CaseFormScreen requires a caseId (edit-only; new cases are created via /new-matter).');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
@@ -64,34 +65,32 @@ export function CaseFormScreen() {
   } = useForm<CaseFormValues>({ defaultValues });
 
   useEffect(() => {
-    Promise.all([
-      clientsRepo.list(),
-      opponentsRepo.list(),
-      caseId ? casesRepo.get(caseId) : Promise.resolve(undefined),
-    ]).then(([clientList, opponentList, caseData]) => {
-      setClients(clientList);
-      setOpponents(opponentList);
-      if (caseData) {
-        reset({
-          title: caseData.title,
-          clientId: caseData.clientId,
-          caseType: caseData.caseType ?? '',
-          cnrNumber: caseData.cnrNumber ?? '',
-          filingNumber: caseData.filingNumber ?? '',
-          filingDate: caseData.filingDate,
-          registrationNumber: caseData.registrationNumber ?? '',
-          forumName: caseData.forumName ?? '',
-          courtState: caseData.courtState ?? '',
-          courtDistrict: caseData.courtDistrict ?? '',
-          courtComplex: caseData.courtComplex ?? '',
-          judgeName: caseData.judgeName ?? '',
-          stage: caseData.stage ?? '',
-          notes: caseData.notes ?? '',
-        });
-        setOpponentIds(caseData.opponents.map((o) => o.id));
+    Promise.all([clientsRepo.list(), opponentsRepo.list(), casesRepo.get(caseId)]).then(
+      ([clientList, opponentList, caseData]) => {
+        setClients(clientList);
+        setOpponents(opponentList);
+        if (caseData) {
+          reset({
+            title: caseData.title,
+            clientId: caseData.clientId,
+            caseType: caseData.caseType ?? '',
+            cnrNumber: caseData.cnrNumber ?? '',
+            filingNumber: caseData.filingNumber ?? '',
+            filingDate: caseData.filingDate,
+            registrationNumber: caseData.registrationNumber ?? '',
+            forumName: caseData.forumName ?? '',
+            courtState: caseData.courtState ?? '',
+            courtDistrict: caseData.courtDistrict ?? '',
+            courtComplex: caseData.courtComplex ?? '',
+            judgeName: caseData.judgeName ?? '',
+            stage: caseData.stage ?? '',
+            notes: caseData.notes ?? '',
+          });
+          setOpponentIds(caseData.opponents.map((o) => o.id));
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
@@ -115,14 +114,9 @@ export function CaseFormScreen() {
       priority: 'normal',
     };
 
-    if (caseId) {
-      await casesRepo.update(caseId, payload);
-      await casesRepo.setOpponents(caseId, opponentIds);
-      navigate(`/cases/${caseId}`);
-    } else {
-      const created = await casesRepo.create(payload, opponentIds);
-      navigate(`/cases/${created.id}`, { replace: true });
-    }
+    await casesRepo.update(caseId, payload);
+    await casesRepo.setOpponents(caseId, opponentIds);
+    navigate(`/cases/${caseId}`);
   });
 
   if (loading) return <Screen>{null}</Screen>;
@@ -189,7 +183,7 @@ export function CaseFormScreen() {
           in a new tab, then type the details in here.
         </p>
 
-        <Button label={caseId ? 'Save Changes' : 'Create Case'} type="submit" loading={isSubmitting} />
+        <Button label="Save Changes" type="submit" loading={isSubmitting} />
       </form>
 
       <Modal open={opponentPickerOpen} title="Select opponents" onClose={() => setOpponentPickerOpen(false)} closeLabel="Done">

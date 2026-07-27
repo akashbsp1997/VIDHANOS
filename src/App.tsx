@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router';
 
 import { BottomNav } from '@/components/BottomNav';
+import { OnboardingGate } from '@/features/onboarding/OnboardingGate';
 import { settingsRepo } from '@/db/repositories/settingsRepo';
 import { getNotificationPermission, startWhileOpenReminders, stopWhileOpenReminders } from '@/services/notifications';
 
@@ -16,9 +17,9 @@ export function App() {
   }, []);
 
   return (
-    <>
+    <OnboardingGate>
       <Outlet />
       <BottomNav />
-    </>
+    </OnboardingGate>
   );
 }

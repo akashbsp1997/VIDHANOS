@@ -34,6 +34,7 @@ export function GuidanceDetailScreen() {
     try {
       const document = await documentsRepo.get(documentId);
       if (!document) throw new Error('Document not found.');
+      if (!document.caseId) throw new Error('This document is not linked to a case yet.');
 
       let fileBase64: string | undefined;
       if (document.fileType === 'image' || document.fileType === 'pdf') {
@@ -80,6 +81,7 @@ export function GuidanceDetailScreen() {
     try {
       const document = await documentsRepo.get(analysis.documentId);
       if (!document) throw new Error('Document not found.');
+      if (!document.caseId) throw new Error('This document is not linked to a case yet.');
 
       let fileBase64: string | undefined;
       if (document.fileType === 'image' || document.fileType === 'pdf') {

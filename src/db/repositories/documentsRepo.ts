@@ -22,4 +22,8 @@ export const documentsRepo = {
   async remove(id: string): Promise<void> {
     await db.documents.delete(id);
   },
+
+  async assignToCase(id: string, caseId: string): Promise<void> {
+    await db.documents.update(id, { caseId, updatedAt: Date.now() });
+  },
 };

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
@@ -13,9 +13,10 @@ import { useIsOnline } from '@/services/network';
 export function CitationSearchScreen() {
   const [searchParams] = useSearchParams();
   const caseId = searchParams.get('caseId') ?? undefined;
+  const initialQuery = searchParams.get('q') ?? '';
   const isOnline = useIsOnline();
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<IndianKanoonSearchDoc[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
@@ -36,6 +37,11 @@ export function CitationSearchScreen() {
     }
   };
 
+  useEffect(() => {
+    if (initialQuery.trim() && isOnline) onSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onSaveResult = async (doc: IndianKanoonSearchDoc) => {
     await citationsRepo.create({
       caseId,
@@ -53,6 +59,11 @@ export function CitationSearchScreen() {
   if (!isOnline) {
     return (
       <Screen>
+        {caseId ? (
+          <p style={{ fontSize: 13, margin: '16px 16px 0' }}>
+            <Link to={`/cases/${caseId}`}>← View case</Link>
+          </p>
+        ) : null}
         <OfflineBanner />
         <ManualCitationForm caseId={caseId} prefillQuery={query} />
       </Screen>
@@ -62,6 +73,11 @@ export function CitationSearchScreen() {
   return (
     <Screen>
       <div className="screen-header">
+        {caseId ? (
+          <p style={{ fontSize: 13, marginBottom: 8 }}>
+            <Link to={`/cases/${caseId}`}>← View case</Link>
+          </p>
+        ) : null}
         <TextField
           label="Search Indian Kanoon"
           value={query}

@@ -49,8 +49,8 @@ export function DashboardScreen() {
         <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--color-text-muted)' }}>
           {(cases ?? []).length} active cases
         </p>
-        <Link to="/cases/new">
-          <Button label="Add Case" />
+        <Link to="/new-matter">
+          <Button label="New Matter" />
         </Link>
       </div>
 

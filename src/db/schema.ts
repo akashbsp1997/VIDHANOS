@@ -69,7 +69,8 @@ export interface Hearing {
 
 export interface DocumentRecord {
   id: string;
-  caseId: string;
+  /** Undefined while the document is attached to an in-progress New Matter wizard, before a case exists. */
+  caseId?: string;
   hearingId?: string;
   fileName: string;
   fileBlob: Blob;
@@ -123,7 +124,8 @@ export interface LegalReference {
 export interface DocumentAnalysis {
   id: string;
   documentId: string;
-  caseId: string;
+  /** Undefined while the document is attached to an in-progress New Matter wizard, before a case exists. */
+  caseId?: string;
   provider: 'gemini';
   status: 'pending' | 'needs_clarification' | 'complete' | 'failed';
   issueSummary?: string;
@@ -134,6 +136,13 @@ export interface DocumentAnalysis {
   userAnswers?: Record<string, string>;
   nextSteps?: string[];
   rawResponse?: string;
+  /** New Matter intake suggestions (only set when this analysis came from the wizard). */
+  suggestedCaseTitle?: string;
+  suggestedCaseType?: string;
+  suggestedApplicantName?: string;
+  suggestedOpponentNames?: string[];
+  /** The user's answer to "what do you want to do about it" during intake. */
+  userIntent?: string;
   createdAt: number;
   updatedAt: number;
 }

@@ -3,6 +3,7 @@ import { db } from '../schema';
 const GEMINI_API_KEY = 'geminiApiKey';
 const INDIAN_KANOON_API_TOKEN = 'indianKanoonApiToken';
 const NOTIFICATIONS_ENABLED = 'notificationsEnabled';
+const ONBOARDING_DISMISSED = 'onboardingDismissed';
 
 async function getValue(key: string): Promise<string | null> {
   const entry = await db.settings.get(key);
@@ -28,4 +29,9 @@ export const settingsRepo = {
     return (await getValue(NOTIFICATIONS_ENABLED)) === 'true';
   },
   setNotificationsEnabled: (value: boolean) => setValue(NOTIFICATIONS_ENABLED, value ? 'true' : 'false'),
+
+  async getOnboardingDismissed(): Promise<boolean> {
+    return (await getValue(ONBOARDING_DISMISSED)) === 'true';
+  },
+  setOnboardingDismissed: (value: boolean) => setValue(ONBOARDING_DISMISSED, value ? 'true' : 'false'),
 };
