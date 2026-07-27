@@ -25,7 +25,9 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-sharing",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "llama.rn",
+      "expo-build-properties"
     ]
   }
 }

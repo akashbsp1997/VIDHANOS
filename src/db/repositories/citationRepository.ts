@@ -14,8 +14,8 @@ export const citationRepository = {
       .orderBy(desc(citations.createdAt));
   },
 
-  async create(input: Omit<NewCitation, 'id' | 'createdAt'>): Promise<Citation> {
-    const row: NewCitation = { ...input, id: generateId(), createdAt: Date.now() };
+  async create(input: Omit<NewCitation, 'id' | 'createdAt'> & { id?: string }): Promise<Citation> {
+    const row: NewCitation = { ...input, id: input.id ?? generateId(), createdAt: Date.now() };
     await db.insert(citations).values(row);
     return row as Citation;
   },

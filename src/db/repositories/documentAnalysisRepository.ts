@@ -14,6 +14,10 @@ export const documentAnalysisRepository = {
       .orderBy(desc(documentAnalyses.createdAt));
   },
 
+  async listRecent(limit = 30): Promise<DocumentAnalysis[]> {
+    return db.select().from(documentAnalyses).orderBy(desc(documentAnalyses.createdAt)).limit(limit);
+  },
+
   async get(id: string): Promise<DocumentAnalysis | undefined> {
     return db.query.documentAnalyses.findFirst({ where: eq(documentAnalyses.id, id) });
   },
