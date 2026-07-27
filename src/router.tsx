@@ -66,4 +66,4 @@ export const router = createBrowserRouter([
       { path: '*', element: <NotFoundScreen /> },
     ],
   },
-]);
+], { basename: import.meta.env.BASE_URL });
