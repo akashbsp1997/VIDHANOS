@@ -1,72 +1,53 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { format } from 'date-fns';
-import { useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { ListRow } from '@/components/ListRow';
 import { Screen } from '@/components/Screen';
-import { caseRepository } from '@/db/repositories/caseRepository';
-import { citationRepository } from '@/db/repositories/citationRepository';
-import { documentRepository } from '@/db/repositories/documentRepository';
-import { hearingRepository } from '@/db/repositories/hearingRepository';
-import { useFocusRefresh } from '@/hooks/useFocusRefresh';
-import type { RootStackScreenProps } from '@/navigation/types';
-import { colors } from '@/theme/colors';
-
-type Props = RootStackScreenProps<'CaseDetail'>;
+import { casesRepo } from '@/db/repositories/casesRepo';
+import { citationsRepo } from '@/db/repositories/citationsRepo';
+import { documentsRepo } from '@/db/repositories/documentsRepo';
+import { hearingsRepo } from '@/db/repositories/hearingsRepo';
 
 const TABS = ['Overview', 'Hearings', 'Documents', 'Citations'] as const;
 type Tab = (typeof TABS)[number];
 
-export function CaseDetailScreen({ route, navigation }: Props) {
-  const { caseId } = route.params;
+export function CaseDetailScreen() {
+  const { caseId } = useParams<{ caseId: string }>();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('Overview');
 
-  const { data: caseData, reload: reloadCase } = useFocusRefresh(() => caseRepository.get(caseId), [caseId]);
-  const { data: hearings, reload: reloadHearings } = useFocusRefresh(
-    () => hearingRepository.listByCase(caseId),
-    [caseId]
-  );
-  const { data: documents, reload: reloadDocuments } = useFocusRefresh(
-    () => documentRepository.listByCase(caseId),
-    [caseId]
-  );
-  const { data: citations } = useFocusRefresh(() => citationRepository.listByCase(caseId), [caseId]);
+  const caseData = useLiveQuery(() => (caseId ? casesRepo.get(caseId) : undefined), [caseId]);
+  const hearings = useLiveQuery(() => (caseId ? hearingsRepo.listByCase(caseId) : []), [caseId]);
+  const documents = useLiveQuery(() => (caseId ? documentsRepo.listByCase(caseId) : []), [caseId]);
+  const citations = useLiveQuery(() => (caseId ? citationsRepo.listByCase(caseId) : []), [caseId]);
 
-  useEffect(() => {
-    if (caseData) navigation.setOptions({ title: caseData.title });
-  }, [caseData, navigation]);
+  if (!caseId || !caseData) return <Screen>{null}</Screen>;
 
-  if (!caseData) return <Screen><></></Screen>;
-
-  const onDeleteHearing = (hearingId: string) => {
-    Alert.alert('Delete hearing', 'This will also cancel its reminder.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await hearingRepository.remove(hearingId);
-          reloadHearings();
-          reloadCase();
-        },
-      },
-    ]);
+  const onDeleteCase = async () => {
+    if (!confirm('Delete this case? Hearings, documents, and citations linked to it will remain but be orphaned.')) return;
+    await casesRepo.remove(caseId);
+    navigate('/cases');
   };
 
   return (
     <Screen>
-      <View style={styles.tabBar}>
+      <div className="screen-header">
+        <h2 style={{ margin: '0 0 4px' }}>{caseData.title}</h2>
+      </div>
+      <div className="tab-bar">
         {TABS.map((t) => (
-          <Pressable key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
-            <Text style={[styles.tabLabel, tab === t && styles.tabLabelActive]}>{t}</Text>
-          </Pressable>
+          <button key={t} type="button" className={`tab-button${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
+            {t}
+          </button>
         ))}
-      </View>
+      </div>
 
       {tab === 'Overview' ? (
-        <ScrollView contentContainerStyle={styles.overview}>
+        <div className="screen-header">
           <Row label="Client" value={caseData.client.name} />
           <Row label="Opponents" value={caseData.opponents.map((o) => o.name).join(', ') || '—'} />
           <Row label="Case type" value={caseData.caseType ?? '—'} />
@@ -82,78 +63,82 @@ export function CaseDetailScreen({ route, navigation }: Props) {
           <Row label="Status" value={caseData.caseStatus} />
           <Row label="Next hearing" value={caseData.nextHearingDate ? format(new Date(caseData.nextHearingDate), 'dd MMM yyyy') : '—'} />
           <Row label="Notes" value={caseData.notes ?? '—'} />
-          <Row label="Source" value={caseData.source === 'ecourts_import' ? 'Imported from eCourts' : 'Manual entry'} />
 
-          <View style={styles.actions}>
-            <Button label="Edit Case" onPress={() => navigation.navigate('CaseForm', { caseId })} />
-            <Button
-              label="Import from eCourts"
-              variant="secondary"
-              onPress={() => navigation.navigate('ECourtsImport', { caseId })}
-            />
-          </View>
-        </ScrollView>
+          <div className="btn-row" style={{ flexDirection: 'column', marginTop: 16 }}>
+            <Link to={`/cases/${caseId}/edit`}>
+              <Button label="Edit Case" />
+            </Link>
+            <Button label="Delete Case" variant="danger" onClick={onDeleteCase} />
+          </div>
+        </div>
       ) : null}
 
       {tab === 'Hearings' ? (
         <>
-          <View style={styles.actionBar}>
-            <Button label="Add Hearing" onPress={() => navigation.navigate('HearingForm', { caseId })} />
-          </View>
-          <FlatList
-            data={hearings ?? []}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
+          <div className="screen-header">
+            <Link to={`/cases/${caseId}/hearings/new`}>
+              <Button label="Add Hearing" />
+            </Link>
+          </div>
+          {hearings?.length === 0 ? (
+            <EmptyState title="No hearings/orders yet" message="Add the next hearing date or a filing deadline." />
+          ) : (
+            hearings?.map((h) => (
               <ListRow
-                title={item.orderSummary || item.purpose || (item.isDeadline ? 'Deadline' : 'Hearing')}
-                subtitle={item.purpose && item.orderSummary ? item.purpose : item.orderType}
-                meta={format(new Date(item.hearingDate), 'dd MMM yyyy')}
-                onPress={() => navigation.navigate('HearingForm', { caseId, hearingId: item.id })}
+                key={h.id}
+                title={h.orderSummary || h.purpose || (h.isDeadline ? 'Deadline' : 'Hearing')}
+                subtitle={h.purpose && h.orderSummary ? h.purpose : h.orderType}
+                meta={format(new Date(h.hearingDate), 'dd MMM yyyy')}
+                to={`/cases/${caseId}/hearings/${h.id}/edit`}
               />
-            )}
-            ListEmptyComponent={<EmptyState title="No hearings/orders yet" message="Add the next hearing date or a filing deadline." />}
-          />
+            ))
+          )}
         </>
       ) : null}
 
       {tab === 'Documents' ? (
         <>
-          <View style={styles.actionBar}>
-            <Button label="Upload Document" onPress={() => navigation.navigate('DocumentUpload', { caseId })} />
-          </View>
-          <FlatList
-            data={documents ?? []}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
+          <div className="screen-header">
+            <Link to={`/cases/${caseId}/documents/upload`}>
+              <Button label="Upload Document" />
+            </Link>
+          </div>
+          {documents?.length === 0 ? (
+            <EmptyState title="No documents yet" message="Upload receipts, applications, orders, or bills for this case." />
+          ) : (
+            documents?.map((d) => (
               <ListRow
-                title={item.fileName}
-                subtitle={item.fileType === 'pdf' ? `PDF · ${item.pageCount ?? '?'} pages` : 'Image'}
-                meta={format(new Date(item.createdAt), 'dd MMM yyyy')}
-                onPress={() => navigation.navigate('DocumentViewer', { documentId: item.id })}
+                key={d.id}
+                title={d.fileName}
+                subtitle={d.fileType === 'pdf' ? `PDF · ${d.pageCount ?? '?'} pages` : 'Image'}
+                meta={format(new Date(d.createdAt), 'dd MMM yyyy')}
+                to={`/cases/${caseId}/documents/${d.id}`}
               />
-            )}
-            ListEmptyComponent={<EmptyState title="No documents yet" message="Upload receipts, applications, orders, or bills for this case." />}
-          />
+            ))
+          )}
         </>
       ) : null}
 
       {tab === 'Citations' ? (
         <>
-          <View style={styles.actionBar}>
-            <Button label="Search Citations" onPress={() => navigation.navigate('CitationSearch', { caseId })} />
-          </View>
-          <FlatList
-            data={citations ?? []}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <ListRow
-                title={item.title}
-                subtitle={item.court ?? undefined}
-                meta={item.dateOfJudgment ? format(new Date(item.dateOfJudgment), 'dd MMM yyyy') : undefined}
-              />
-            )}
-            ListEmptyComponent={<EmptyState title="No citations saved" message="Search Indian Kanoon for relevant judgments to cite." />}
-          />
+          <div className="screen-header">
+            <Link to={`/citations?caseId=${caseId}`}>
+              <Button label="Search Citations" />
+            </Link>
+          </div>
+          {citations?.length === 0 ? (
+            <EmptyState title="No citations saved" message="Search Indian Kanoon for relevant judgments to cite." />
+          ) : (
+            citations?.map((c) => (
+              <div key={c.id} className="list-row">
+                <div>
+                  <div className="list-row-title">{c.title}</div>
+                  {c.court ? <div className="list-row-subtitle">{c.court}</div> : null}
+                </div>
+                {c.dateOfJudgment ? <div className="list-row-meta">{format(new Date(c.dateOfJudgment), 'dd MMM yyyy')}</div> : null}
+              </div>
+            ))
+          )}
         </>
       ) : null}
     </Screen>
@@ -162,60 +147,9 @@ export function CaseDetailScreen({ route, navigation }: Props) {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
-    </View>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)' }}>{label}</div>
+      <div style={{ fontSize: 15, marginTop: 2 }}>{value}</div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  tabActive: {
-    borderBottomColor: colors.primary,
-  },
-  tabLabel: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
-  tabLabelActive: {
-    color: colors.primary,
-  },
-  overview: {
-    padding: 16,
-  },
-  row: {
-    marginBottom: 12,
-  },
-  rowLabel: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
-  rowValue: {
-    fontSize: 15,
-    color: colors.text,
-    marginTop: 2,
-  },
-  actions: {
-    marginTop: 16,
-    gap: 10,
-  },
-  actionBar: {
-    padding: 16,
-    paddingBottom: 0,
-  },
-});

@@ -1,61 +1,29 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useId, type SelectHTMLAttributes } from 'react';
 
-import { colors } from '@/theme/colors';
-
-interface SelectFieldProps {
+interface SelectFieldProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'className'> {
   label: string;
-  value: string;
-  placeholder: string;
-  onPress: () => void;
   error?: string;
+  options: Array<{ value: string; label: string }>;
+  placeholder?: string;
 }
 
-export function SelectField({ label, value, placeholder, onPress, error }: SelectFieldProps) {
+export function SelectField({ label, error, options, placeholder, ...rest }: SelectFieldProps) {
+  const id = useId();
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
-      <Pressable onPress={onPress} style={[styles.field, error && styles.fieldError]}>
-        <Text style={value ? styles.value : styles.placeholder} numberOfLines={1}>
-          {value || placeholder}
-        </Text>
-      </Pressable>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-    </View>
+    <div className="field">
+      <label className="field-label" htmlFor={id}>
+        {label}
+      </label>
+      <select id={id} className="field-select" {...rest}>
+        {placeholder ? <option value="">{placeholder}</option> : null}
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      {error ? <p className="field-error">{error}</p> : null}
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginBottom: 6,
-  },
-  field: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: colors.surface,
-  },
-  fieldError: {
-    borderColor: colors.danger,
-  },
-  value: {
-    fontSize: 15,
-    color: colors.text,
-  },
-  placeholder: {
-    fontSize: 15,
-    color: colors.textMuted,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 12,
-    marginTop: 4,
-  },
-});

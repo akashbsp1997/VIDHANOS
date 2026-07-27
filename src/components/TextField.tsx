@@ -1,52 +1,33 @@
-import { StyleSheet, Text, TextInput, type TextInputProps, View } from 'react-native';
+import { useId, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 
-import { colors } from '@/theme/colors';
-
-interface TextFieldProps extends TextInputProps {
+interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'className'> {
   label: string;
   error?: string;
+  multiline?: false;
 }
 
-export function TextField({ label, error, style, ...inputProps }: TextFieldProps) {
+interface TextAreaFieldProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'className'> {
+  label: string;
+  error?: string;
+  multiline: true;
+}
+
+export function TextField(props: TextFieldProps | TextAreaFieldProps) {
+  const { label, error } = props;
+  const id = useId();
+  const { label: _label, error: _error, multiline: _multiline, ...rest } = props;
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        style={[styles.input, error && styles.inputError, style]}
-        placeholderTextColor={colors.textMuted}
-        {...inputProps}
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-    </View>
+    <div className="field">
+      <label className="field-label" htmlFor={id}>
+        {label}
+      </label>
+      {props.multiline ? (
+        <textarea id={id} className="field-textarea" {...(rest as TextareaHTMLAttributes<HTMLTextAreaElement>)} />
+      ) : (
+        <input id={id} className="field-input" {...(rest as InputHTMLAttributes<HTMLInputElement>)} />
+      )}
+      {error ? <p className="field-error">{error}</p> : null}
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: colors.text,
-    backgroundColor: colors.surface,
-  },
-  inputError: {
-    borderColor: colors.danger,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 12,
-    marginTop: 4,
-  },
-});

@@ -1,26 +1,22 @@
-import { format } from 'date-fns';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { addDays, format, isToday, startOfDay } from 'date-fns';
 import { useMemo } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { Link } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { ListRow } from '@/components/ListRow';
 import { Screen } from '@/components/Screen';
-import { caseRepository } from '@/db/repositories/caseRepository';
-import { hearingRepository } from '@/db/repositories/hearingRepository';
-import { useFocusRefresh } from '@/hooks/useFocusRefresh';
-import type { MainTabScreenProps } from '@/navigation/types';
-import { colors } from '@/theme/colors';
+import { casesRepo } from '@/db/repositories/casesRepo';
+import { hearingsRepo } from '@/db/repositories/hearingsRepo';
+import type { Hearing } from '@/db/schema';
 
-type Props = MainTabScreenProps<'Dashboard'>;
+export function DashboardScreen() {
+  const rangeStart = startOfDay(addDays(new Date(), -30)).getTime();
+  const rangeEnd = addDays(new Date(), 30).getTime();
 
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-
-export function DashboardScreen({ navigation }: Props) {
-  const { data: upcoming } = useFocusRefresh(() =>
-    hearingRepository.listInRange(Date.now(), Date.now() + THIRTY_DAYS_MS)
-  );
-  const { data: cases } = useFocusRefresh(() => caseRepository.list());
+  const hearings = useLiveQuery(() => hearingsRepo.listInRange(rangeStart, rangeEnd));
+  const cases = useLiveQuery(() => casesRepo.list());
 
   const caseTitleById = useMemo(() => {
     const map = new Map<string, string>();
@@ -28,57 +24,73 @@ export function DashboardScreen({ navigation }: Props) {
     return map;
   }, [cases]);
 
+  const buckets = useMemo(() => {
+    const todayStart = startOfDay(new Date()).getTime();
+    const weekEnd = addDays(new Date(), 7).getTime();
+    const overdue: Hearing[] = [];
+    const today: Hearing[] = [];
+    const thisWeek: Hearing[] = [];
+    const later: Hearing[] = [];
+
+    (hearings ?? []).forEach((h) => {
+      if (h.hearingDate < todayStart) overdue.push(h);
+      else if (isToday(h.hearingDate)) today.push(h);
+      else if (h.hearingDate <= weekEnd) thisWeek.push(h);
+      else later.push(h);
+    });
+
+    return { overdue, today, thisWeek, later };
+  }, [hearings]);
+
   return (
     <Screen>
-      <View style={styles.header}>
-        <Text style={styles.title}>VIDHANOS</Text>
-        <Text style={styles.subtitle}>{(cases ?? []).length} active cases</Text>
-        <View style={styles.quickActions}>
-          <Button label="Add Case" onPress={() => navigation.navigate('CaseForm', {})} />
-        </View>
-      </View>
-      <Text style={styles.sectionTitle}>Next 30 days</Text>
-      <FlatList
-        data={upcoming ?? []}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <ListRow
-            title={item.orderSummary || item.purpose || (item.isDeadline ? 'Deadline' : 'Hearing')}
-            subtitle={caseTitleById.get(item.caseId)}
-            meta={format(new Date(item.hearingDate), 'dd MMM')}
-            onPress={() => navigation.navigate('CaseDetail', { caseId: item.caseId })}
-          />
-        )}
-        ListEmptyComponent={<EmptyState title="Nothing coming up" message="Hearings and deadlines in the next 30 days will show here." />}
-      />
+      <div className="screen-header">
+        <h1 style={{ margin: '0 0 4px', fontSize: 24 }}>VIDHANOS</h1>
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--color-text-muted)' }}>
+          {(cases ?? []).length} active cases
+        </p>
+        <Link to="/cases/new">
+          <Button label="Add Case" />
+        </Link>
+      </div>
+
+      <Bucket title="Overdue" items={buckets.overdue} caseTitleById={caseTitleById} />
+      <Bucket title="Today" items={buckets.today} caseTitleById={caseTitleById} />
+      <Bucket title="This Week" items={buckets.thisWeek} caseTitleById={caseTitleById} />
+      <Bucket title="Later" items={buckets.later} caseTitleById={caseTitleById} />
+
+      {hearings && hearings.length === 0 ? (
+        <EmptyState title="Nothing coming up" message="Hearings and deadlines will show here." />
+      ) : null}
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    padding: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: colors.textMuted,
-    marginTop: 2,
-    marginBottom: 12,
-  },
-  quickActions: {
-    flexDirection: 'row',
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-    marginHorizontal: 16,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-});
+function Bucket({
+  title,
+  items,
+  caseTitleById,
+}: {
+  title: string;
+  items: Hearing[];
+  caseTitleById: Map<string, string>;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div>
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-muted)', margin: '0 16px 4px', textTransform: 'uppercase' }}>
+        {title}
+      </p>
+      {items.map((h) => (
+        <ListRow
+          key={h.id}
+          title={h.orderSummary || h.purpose || (h.isDeadline ? 'Deadline' : 'Hearing')}
+          subtitle={caseTitleById.get(h.caseId)}
+          meta={format(new Date(h.hearingDate), 'dd MMM')}
+          to={`/cases/${h.caseId}`}
+        />
+      ))}
+    </div>
+  );
+}

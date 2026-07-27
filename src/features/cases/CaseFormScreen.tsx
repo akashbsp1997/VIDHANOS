@@ -1,30 +1,25 @@
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Alert, ScrollView, StyleSheet } from 'react-native';
+import { useNavigate, useParams, Link } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { DateField } from '@/components/DateField';
+import { Modal } from '@/components/Modal';
 import { Screen } from '@/components/Screen';
 import { SelectField } from '@/components/SelectField';
-import { SelectModal } from '@/components/SelectModal';
 import { TextField } from '@/components/TextField';
-import { caseRepository } from '@/db/repositories/caseRepository';
-import { clientRepository } from '@/db/repositories/clientRepository';
-import { opponentRepository } from '@/db/repositories/opponentRepository';
-import type { RootStackParamList } from '@/navigation/types';
-import type { Client, Opponent } from '@/types/db';
-
-type Props = NativeStackScreenProps<RootStackParamList, 'CaseForm'>;
+import { casesRepo } from '@/db/repositories/casesRepo';
+import { clientsRepo } from '@/db/repositories/clientsRepo';
+import { opponentsRepo } from '@/db/repositories/opponentsRepo';
+import type { Client, Opponent } from '@/db/schema';
 
 interface CaseFormValues {
   title: string;
   clientId: string;
-  opponentIds: string[];
   caseType: string;
   cnrNumber: string;
   filingNumber: string;
-  filingDate: number | null;
+  filingDate: number | undefined;
   registrationNumber: string;
   forumName: string;
   courtState: string;
@@ -38,11 +33,10 @@ interface CaseFormValues {
 const defaultValues: CaseFormValues = {
   title: '',
   clientId: '',
-  opponentIds: [],
   caseType: '',
   cnrNumber: '',
   filingNumber: '',
-  filingDate: null,
+  filingDate: undefined,
   registrationNumber: '',
   forumName: '',
   courtState: '',
@@ -53,28 +47,27 @@ const defaultValues: CaseFormValues = {
   notes: '',
 };
 
-export function CaseFormScreen({ route, navigation }: Props) {
-  const { caseId } = route.params;
+export function CaseFormScreen() {
+  const { caseId } = useParams<{ caseId: string }>();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
   const [opponents, setOpponents] = useState<Opponent[]>([]);
-  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [opponentIds, setOpponentIds] = useState<string[]>([]);
   const [opponentPickerOpen, setOpponentPickerOpen] = useState(false);
 
   const {
     control,
     handleSubmit,
     reset,
-    watch,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CaseFormValues>({ defaultValues });
 
   useEffect(() => {
     Promise.all([
-      clientRepository.list(),
-      opponentRepository.list(),
-      caseId ? caseRepository.get(caseId) : Promise.resolve(undefined),
+      clientsRepo.list(),
+      opponentsRepo.list(),
+      caseId ? casesRepo.get(caseId) : Promise.resolve(undefined),
     ]).then(([clientList, opponentList, caseData]) => {
       setClients(clientList);
       setOpponents(opponentList);
@@ -82,11 +75,10 @@ export function CaseFormScreen({ route, navigation }: Props) {
         reset({
           title: caseData.title,
           clientId: caseData.clientId,
-          opponentIds: caseData.opponents.map((o) => o.id),
           caseType: caseData.caseType ?? '',
           cnrNumber: caseData.cnrNumber ?? '',
           filingNumber: caseData.filingNumber ?? '',
-          filingDate: caseData.filingDate ?? null,
+          filingDate: caseData.filingDate,
           registrationNumber: caseData.registrationNumber ?? '',
           forumName: caseData.forumName ?? '',
           courtState: caseData.courtState ?? '',
@@ -96,199 +88,134 @@ export function CaseFormScreen({ route, navigation }: Props) {
           stage: caseData.stage ?? '',
           notes: caseData.notes ?? '',
         });
+        setOpponentIds(caseData.opponents.map((o) => o.id));
       }
       setLoading(false);
     });
-  }, [caseId, reset]);
-
-  const clientId = watch('clientId');
-  const opponentIds = watch('opponentIds');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId]);
 
   const onSubmit = handleSubmit(async (values) => {
     const payload = {
       title: values.title.trim(),
       clientId: values.clientId,
-      caseType: values.caseType.trim() || null,
-      cnrNumber: values.cnrNumber.trim() || null,
-      filingNumber: values.filingNumber.trim() || null,
+      caseType: values.caseType.trim() || undefined,
+      cnrNumber: values.cnrNumber.trim() || undefined,
+      filingNumber: values.filingNumber.trim() || undefined,
       filingDate: values.filingDate,
-      registrationNumber: values.registrationNumber.trim() || null,
-      forumName: values.forumName.trim() || null,
-      courtState: values.courtState.trim() || null,
-      courtDistrict: values.courtDistrict.trim() || null,
-      courtComplex: values.courtComplex.trim() || null,
-      judgeName: values.judgeName.trim() || null,
-      stage: values.stage.trim() || null,
-      notes: values.notes.trim() || null,
+      registrationNumber: values.registrationNumber.trim() || undefined,
+      forumName: values.forumName.trim() || undefined,
+      courtState: values.courtState.trim() || undefined,
+      courtDistrict: values.courtDistrict.trim() || undefined,
+      courtComplex: values.courtComplex.trim() || undefined,
+      judgeName: values.judgeName.trim() || undefined,
+      stage: values.stage.trim() || undefined,
+      notes: values.notes.trim() || undefined,
+      caseStatus: 'pending',
+      priority: 'normal',
     };
 
     if (caseId) {
-      await caseRepository.update(caseId, payload);
-      await caseRepository.setOpponents(caseId, values.opponentIds);
-      navigation.goBack();
+      await casesRepo.update(caseId, payload);
+      await casesRepo.setOpponents(caseId, opponentIds);
+      navigate(`/cases/${caseId}`);
     } else {
-      const created = await caseRepository.create(payload, values.opponentIds);
-      navigation.replace('CaseDetail', { caseId: created.id });
+      const created = await casesRepo.create(payload, opponentIds);
+      navigate(`/cases/${created.id}`, { replace: true });
     }
   });
 
-  const onDelete = () => {
-    if (!caseId) return;
-    Alert.alert('Delete case', 'This deletes the case record. Hearings, documents, and citations linked to it will remain but be orphaned — remove those separately if needed.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await caseRepository.remove(caseId);
-          navigation.popToTop();
-        },
-      },
-    ]);
-  };
+  if (loading) return <Screen>{null}</Screen>;
 
-  if (loading) return <Screen><></></Screen>;
-
-  const selectedClient = clients.find((c) => c.id === clientId);
-  const selectedOpponents = opponents.filter((o) => opponentIds.includes(o.id));
+  const selectedOpponentNames = opponents.filter((o) => opponentIds.includes(o.id)).map((o) => o.name);
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <form className="screen-header" onSubmit={onSubmit}>
         <Controller
           control={control}
           name="title"
           rules={{ required: 'Case title is required' }}
           render={({ field }) => (
-            <TextField
-              label="Case title"
-              value={field.value}
-              onChangeText={field.onChange}
-              error={errors.title?.message}
-              placeholder="e.g. Ramesh Kumar vs Suresh Traders"
+            <TextField label="Case title" placeholder="e.g. Ramesh Kumar vs Suresh Traders" error={errors.title?.message} {...field} />
+          )}
+        />
+        <Controller
+          control={control}
+          name="clientId"
+          rules={{ required: 'Select a client' }}
+          render={({ field }) => (
+            <SelectField
+              label="Client (applicant)"
+              placeholder={clients.length ? 'Select a client' : 'No clients yet — add one first'}
+              options={clients.map((c) => ({ value: c.id, label: c.name }))}
+              error={errors.clientId?.message}
+              {...field}
             />
           )}
         />
-        <SelectField
-          label="Client (applicant)"
-          value={selectedClient?.name ?? ''}
-          placeholder="Select a client"
-          onPress={() => setClientPickerOpen(true)}
-          error={errors.clientId?.message}
-        />
-        <SelectField
-          label="Opponents"
-          value={selectedOpponents.map((o) => o.name).join(', ')}
-          placeholder="Select opponents (optional)"
-          onPress={() => setOpponentPickerOpen(true)}
-        />
-        <Controller
-          control={control}
-          name="caseType"
-          render={({ field }) => (
-            <TextField label="Case type" value={field.value} onChangeText={field.onChange} placeholder="e.g. Civil Suit" />
-          )}
-        />
-        <Controller
-          control={control}
-          name="forumName"
-          render={({ field }) => (
-            <TextField label="Forum / Court" value={field.value} onChangeText={field.onChange} placeholder="e.g. District Consumer Commission" />
-          )}
-        />
-        <Controller
-          control={control}
-          name="courtState"
-          render={({ field }) => <TextField label="State" value={field.value} onChangeText={field.onChange} />}
-        />
-        <Controller
-          control={control}
-          name="courtDistrict"
-          render={({ field }) => <TextField label="District" value={field.value} onChangeText={field.onChange} />}
-        />
-        <Controller
-          control={control}
-          name="courtComplex"
-          render={({ field }) => <TextField label="Court complex" value={field.value} onChangeText={field.onChange} />}
-        />
-        <Controller
-          control={control}
-          name="judgeName"
-          render={({ field }) => <TextField label="Judge" value={field.value} onChangeText={field.onChange} />}
-        />
-        <Controller
-          control={control}
-          name="cnrNumber"
-          render={({ field }) => (
-            <TextField label="CNR number" value={field.value} onChangeText={field.onChange} autoCapitalize="characters" />
-          )}
-        />
-        <Controller
-          control={control}
-          name="filingNumber"
-          render={({ field }) => <TextField label="Filing number" value={field.value} onChangeText={field.onChange} />}
-        />
+
+        <div className="field">
+          <span className="field-label">Opponents</span>
+          <Button
+            label={selectedOpponentNames.length ? selectedOpponentNames.join(', ') : 'Select opponents (optional)'}
+            variant="secondary"
+            onClick={() => setOpponentPickerOpen(true)}
+          />
+        </div>
+
+        <Controller control={control} name="caseType" render={({ field }) => <TextField label="Case type" placeholder="e.g. Civil Suit" {...field} />} />
+        <Controller control={control} name="forumName" render={({ field }) => <TextField label="Forum / Court" placeholder="e.g. District Consumer Commission" {...field} />} />
+        <Controller control={control} name="courtState" render={({ field }) => <TextField label="State" {...field} />} />
+        <Controller control={control} name="courtDistrict" render={({ field }) => <TextField label="District" {...field} />} />
+        <Controller control={control} name="courtComplex" render={({ field }) => <TextField label="Court complex" {...field} />} />
+        <Controller control={control} name="judgeName" render={({ field }) => <TextField label="Judge" {...field} />} />
+        <Controller control={control} name="cnrNumber" render={({ field }) => <TextField label="CNR number" {...field} />} />
+        <Controller control={control} name="filingNumber" render={({ field }) => <TextField label="Filing number" {...field} />} />
         <Controller
           control={control}
           name="filingDate"
           render={({ field }) => <DateField label="Filing date" value={field.value} onChange={field.onChange} />}
         />
-        <Controller
-          control={control}
-          name="registrationNumber"
-          render={({ field }) => <TextField label="Registration number" value={field.value} onChangeText={field.onChange} />}
-        />
-        <Controller
-          control={control}
-          name="stage"
-          render={({ field }) => <TextField label="Stage" value={field.value} onChangeText={field.onChange} placeholder="e.g. Evidence, Arguments" />}
-        />
-        <Controller
-          control={control}
-          name="notes"
-          render={({ field }) => <TextField label="Notes" value={field.value} onChangeText={field.onChange} multiline />}
-        />
+        <Controller control={control} name="registrationNumber" render={({ field }) => <TextField label="Registration number" {...field} />} />
+        <Controller control={control} name="stage" render={({ field }) => <TextField label="Stage" placeholder="e.g. Evidence, Arguments" {...field} />} />
+        <Controller control={control} name="notes" render={({ field }) => <TextField label="Notes" multiline {...field} />} />
 
-        <Button
-          label={caseId ? 'Save Changes' : 'Create Case'}
-          onPress={onSubmit}
-          loading={isSubmitting}
-          disabled={!clientId}
-        />
-        {caseId ? <Button label="Delete Case" onPress={onDelete} variant="danger" /> : null}
-      </ScrollView>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -6, marginBottom: 14 }}>
+          Looking up the case?{' '}
+          <a href="https://services.ecourts.gov.in/ecourtindia_v6/" target="_blank" rel="noopener noreferrer">
+            Open eCourts ↗
+          </a>{' '}
+          in a new tab, then type the details in here.
+        </p>
 
-      <SelectModal
-        visible={clientPickerOpen}
-        title="Select client"
-        options={clients.map((c) => ({ id: c.id, label: c.name, sublabel: c.phone ?? undefined }))}
-        selectedIds={clientId ? [clientId] : []}
-        onToggle={(id) => setValue('clientId', id, { shouldValidate: true })}
-        onClose={() => setClientPickerOpen(false)}
-        emptyMessage="Add a client first from the Clients list."
-      />
-      <SelectModal
-        visible={opponentPickerOpen}
-        title="Select opponents"
-        multi
-        options={opponents.map((o) => ({ id: o.id, label: o.name, sublabel: o.phone ?? undefined }))}
-        selectedIds={opponentIds}
-        onToggle={(id) => {
-          const next = opponentIds.includes(id)
-            ? opponentIds.filter((existing) => existing !== id)
-            : [...opponentIds, id];
-          setValue('opponentIds', next);
-        }}
-        onClose={() => setOpponentPickerOpen(false)}
-        emptyMessage="Add an opponent first from the Opponents list."
-      />
+        <Button label={caseId ? 'Save Changes' : 'Create Case'} type="submit" loading={isSubmitting} />
+      </form>
+
+      <Modal open={opponentPickerOpen} title="Select opponents" onClose={() => setOpponentPickerOpen(false)} closeLabel="Done">
+        {opponents.length === 0 ? (
+          <div style={{ padding: 16 }}>
+            <p className="empty-state-message">
+              No opponents yet. <Link to="/opponents/new">Add one</Link> first.
+            </p>
+          </div>
+        ) : (
+          opponents.map((opponent) => (
+            <label key={opponent.id} className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={opponentIds.includes(opponent.id)}
+                onChange={() =>
+                  setOpponentIds((prev) =>
+                    prev.includes(opponent.id) ? prev.filter((id) => id !== opponent.id) : [...prev, opponent.id]
+                  )
+                }
+              />
+              {opponent.name}
+            </label>
+          ))
+        )}
+      </Modal>
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-    gap: 4,
-  },
-});

@@ -1,76 +1,20 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
+import type { ButtonHTMLAttributes } from 'react';
 
-import { colors } from '@/theme/colors';
-
-interface ButtonProps {
+interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   label: string;
-  onPress: () => void;
   variant?: 'primary' | 'secondary' | 'danger';
-  disabled?: boolean;
   loading?: boolean;
 }
 
-export function Button({ label, onPress, variant = 'primary', disabled, loading }: ButtonProps) {
+export function Button({ label, variant = 'primary', loading, disabled, ...rest }: ButtonProps) {
   return (
-    <Pressable
-      onPress={onPress}
+    <button
+      className={`btn btn-${variant}`}
       disabled={disabled || loading}
-      style={({ pressed }) => [
-        styles.base,
-        variant === 'primary' && styles.primary,
-        variant === 'secondary' && styles.secondary,
-        variant === 'danger' && styles.danger,
-        (disabled || loading) && styles.disabled,
-        pressed && styles.pressed,
-      ]}
+      type={rest.type ?? 'button'}
+      {...rest}
     >
-      {loading ? (
-        <ActivityIndicator color={variant === 'secondary' ? colors.primary : colors.primaryText} />
-      ) : (
-        <Text
-          style={[
-            styles.label,
-            variant === 'secondary' && styles.secondaryLabel,
-          ]}
-        >
-          {label}
-        </Text>
-      )}
-    </Pressable>
+      {loading ? 'Please wait…' : label}
+    </button>
   );
 }
-
-const styles = StyleSheet.create({
-  base: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primary: {
-    backgroundColor: colors.primary,
-  },
-  secondary: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  danger: {
-    backgroundColor: colors.danger,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  pressed: {
-    opacity: 0.85,
-  },
-  label: {
-    color: colors.primaryText,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  secondaryLabel: {
-    color: colors.primary,
-  },
-});

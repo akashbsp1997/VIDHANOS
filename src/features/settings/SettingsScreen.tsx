@@ -1,21 +1,22 @@
-import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
-import { useFocusRefresh } from '@/hooks/useFocusRefresh';
-import { exportBackup } from '@/services/backup';
-import { getStorageUsageBytes } from '@/services/fileStorage';
+import { settingsRepo } from '@/db/repositories/settingsRepo';
 import {
-  deleteLocalModel,
-  downloadLocalModel,
-  getLocalModelSizeBytes,
-  isLocalModelDownloaded,
-} from '@/services/ai/localModel';
-import { topUpScheduledReminders } from '@/services/notifications';
-import { getGeminiApiKey, getIndianKanoonToken, setGeminiApiKey, setIndianKanoonToken } from '@/services/secureConfig';
-import { colors } from '@/theme/colors';
+  exportBackup,
+  getStorageEstimate,
+  importBackup,
+  isStoragePersisted,
+  requestPersistentStorage,
+} from '@/services/backup';
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  startWhileOpenReminders,
+  stopWhileOpenReminders,
+} from '@/services/notifications';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -24,199 +25,186 @@ function formatBytes(bytes: number): string {
 }
 
 export function SettingsScreen() {
-  const { data: keys, reload: reloadKeys } = useFocusRefresh(async () => ({
-    gemini: await getGeminiApiKey(),
-    indianKanoon: await getIndianKanoonToken(),
-  }));
-  const { data: storage, reload: reloadStorage } = useFocusRefresh(async () => ({
-    usedBytes: getStorageUsageBytes(),
-    modelDownloaded: isLocalModelDownloaded(),
-    modelBytes: getLocalModelSizeBytes(),
-  }));
-
+  const [geminiKey, setGeminiKey] = useState<string | null>(null);
   const [geminiInput, setGeminiInput] = useState('');
+  const [kanoonToken, setKanoonToken] = useState<string | null>(null);
   const [kanoonInput, setKanoonInput] = useState('');
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [storage, setStorage] = useState<{ usageBytes: number; quotaBytes: number } | null>(null);
+  const [persisted, setPersisted] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const reload = async () => {
+    setGeminiKey(await settingsRepo.getGeminiApiKey());
+    setKanoonToken(await settingsRepo.getIndianKanoonToken());
+    setNotifPermission(getNotificationPermission());
+    setNotifEnabled(await settingsRepo.getNotificationsEnabled());
+    setStorage(await getStorageEstimate());
+    setPersisted(await isStoragePersisted());
+  };
+
+  useEffect(() => {
+    reload();
+  }, []);
 
   const onSaveGemini = async () => {
-    await setGeminiApiKey(geminiInput.trim() || null);
+    await settingsRepo.setGeminiApiKey(geminiInput.trim() || null);
     setGeminiInput('');
-    reloadKeys();
+    reload();
   };
 
   const onSaveKanoon = async () => {
-    await setIndianKanoonToken(kanoonInput.trim() || null);
+    await settingsRepo.setIndianKanoonToken(kanoonInput.trim() || null);
     setKanoonInput('');
-    reloadKeys();
+    reload();
   };
 
-  const onDownloadModel = async () => {
-    setDownloadProgress(0);
-    try {
-      await downloadLocalModel(undefined, setDownloadProgress);
-      reloadStorage();
-    } catch {
-      Alert.alert('Download failed', 'Could not download the offline model. Check your connection and try again.');
-    } finally {
-      setDownloadProgress(null);
+  const onToggleNotifications = async () => {
+    if (!notifEnabled) {
+      const permission = await requestNotificationPermission();
+      setNotifPermission(permission);
+      if (permission === 'granted') {
+        await settingsRepo.setNotificationsEnabled(true);
+        startWhileOpenReminders();
+        setNotifEnabled(true);
+      }
+    } else {
+      stopWhileOpenReminders();
+      await settingsRepo.setNotificationsEnabled(false);
+      setNotifEnabled(false);
     }
   };
 
-  const onDeleteModel = () => {
-    Alert.alert('Delete offline model', 'AI guidance will only work online after this.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          deleteLocalModel();
-          reloadStorage();
-        },
-      },
-    ]);
+  const onPersist = async () => {
+    const granted = await requestPersistentStorage();
+    setPersisted(granted);
   };
 
-  const onExportBackup = async () => {
+  const onExport = async () => {
     setBusy(true);
+    setMessage(null);
     try {
       await exportBackup();
+      setMessage('Backup downloaded.');
     } catch {
-      Alert.alert('Backup failed', 'Could not create the backup file.');
+      setMessage('Backup failed.');
     } finally {
       setBusy(false);
     }
   };
 
-  const onResyncReminders = async () => {
+  const onImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (!confirm('Import this backup? Existing records with the same ID will be overwritten.')) return;
     setBusy(true);
-    await topUpScheduledReminders();
-    setBusy(false);
-    Alert.alert('Reminders synced', 'Upcoming hearing/deadline reminders are up to date.');
+    setMessage(null);
+    try {
+      await importBackup(file);
+      setMessage('Backup imported.');
+      reload();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Import failed.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Section title="AI Guidance — Gemini (online)">
-          <Text style={styles.hint}>
-            {keys?.gemini ? 'A Gemini API key is set.' : 'No Gemini API key set. Get one from Google AI Studio.'}
-          </Text>
+      <div className="screen-header">
+        <div className="section">
+          <p className="section-title">AI Guidance — Gemini</p>
+          <p style={{ fontSize: 12, marginBottom: 8 }}>
+            {geminiKey ? 'A Gemini API key is set.' : 'No Gemini API key set. Get one from Google AI Studio.'}
+          </p>
           <TextField
             label="Gemini API key"
+            type="password"
             value={geminiInput}
-            onChangeText={setGeminiInput}
-            placeholder={keys?.gemini ? '••••••••••••' : 'Paste your API key'}
-            autoCapitalize="none"
-            secureTextEntry
+            onChange={(e) => setGeminiInput(e.target.value)}
+            placeholder={geminiKey ? '••••••••••••' : 'Paste your API key'}
           />
-          <View style={styles.row}>
-            <Button label="Save" onPress={onSaveGemini} />
-            {keys?.gemini ? (
-              <Button label="Clear" variant="secondary" onPress={() => setGeminiApiKey(null).then(reloadKeys)} />
+          <div className="btn-row">
+            <Button label="Save" onClick={onSaveGemini} />
+            {geminiKey ? (
+              <Button label="Clear" variant="secondary" onClick={() => settingsRepo.setGeminiApiKey(null).then(reload)} />
             ) : null}
-          </View>
-        </Section>
+          </div>
+        </div>
 
-        <Section title="AI Guidance — Offline model">
-          <Text style={styles.hint}>
-            {storage?.modelDownloaded
-              ? `Downloaded (${formatBytes(storage.modelBytes)}). Used automatically when offline.`
-              : 'Not downloaded. Download once (large file, use Wi-Fi) to use AI guidance without internet.'}
-          </Text>
-          {downloadProgress !== null ? (
-            <Text style={styles.hint}>Downloading… {(downloadProgress * 100).toFixed(0)}%</Text>
-          ) : (
-            <View style={styles.row}>
-              {storage?.modelDownloaded ? (
-                <Button label="Delete Model" variant="danger" onPress={onDeleteModel} />
-              ) : (
-                <Button label="Download Model" onPress={onDownloadModel} />
-              )}
-            </View>
-          )}
-        </Section>
-
-        <Section title="Citations — Indian Kanoon">
-          <Text style={styles.hint}>
-            {keys?.indianKanoon ? 'A token is set.' : 'No API token set. Requires a paid Indian Kanoon account.'}
-          </Text>
+        <div className="section">
+          <p className="section-title">Citations — Indian Kanoon</p>
+          <p style={{ fontSize: 12, marginBottom: 8 }}>
+            {kanoonToken ? 'A token is set.' : 'No API token set. Requires a paid Indian Kanoon account.'}
+          </p>
           <TextField
             label="Indian Kanoon API token"
+            type="password"
             value={kanoonInput}
-            onChangeText={setKanoonInput}
-            placeholder={keys?.indianKanoon ? '••••••••••••' : 'Paste your API token'}
-            autoCapitalize="none"
-            secureTextEntry
+            onChange={(e) => setKanoonInput(e.target.value)}
+            placeholder={kanoonToken ? '••••••••••••' : 'Paste your API token'}
           />
-          <View style={styles.row}>
-            <Button label="Save" onPress={onSaveKanoon} />
-            {keys?.indianKanoon ? (
-              <Button label="Clear" variant="secondary" onPress={() => setIndianKanoonToken(null).then(reloadKeys)} />
+          <div className="btn-row">
+            <Button label="Save" onClick={onSaveKanoon} />
+            {kanoonToken ? (
+              <Button label="Clear" variant="secondary" onClick={() => settingsRepo.setIndianKanoonToken(null).then(reload)} />
             ) : null}
-          </View>
-        </Section>
+          </div>
+        </div>
 
-        <Section title="Storage & Backup">
-          <Text style={styles.hint}>Case documents on this device: {storage ? formatBytes(storage.usedBytes) : '—'}</Text>
-          <Text style={styles.hintSmall}>
-            Everything is stored only on this device — there is no cloud sync. Export a backup regularly.
-          </Text>
-          <View style={styles.row}>
-            <Button label="Export Backup" onPress={onExportBackup} loading={busy} />
-          </View>
-        </Section>
+        <div className="section">
+          <p className="section-title">Reminders</p>
+          <p style={{ fontSize: 12, marginBottom: 8 }}>
+            {notifPermission === 'unsupported'
+              ? 'Notifications are not supported in this browser.'
+              : 'Best effort only — fires while this app is open, not a guaranteed alarm if closed. The Dashboard\'s Overdue/Today section is always accurate regardless.'}
+          </p>
+          {notifPermission !== 'unsupported' ? (
+            <Button
+              label={notifEnabled ? 'Disable while-open alerts' : 'Enable while-open alerts'}
+              variant={notifEnabled ? 'secondary' : 'primary'}
+              onClick={onToggleNotifications}
+            />
+          ) : null}
+        </div>
 
-        <Section title="Reminders">
-          <View style={styles.row}>
-            <Button label="Re-sync Reminders" variant="secondary" onPress={onResyncReminders} loading={busy} />
-          </View>
-        </Section>
-      </ScrollView>
+        <div className="section">
+          <p className="section-title">Storage & Backup</p>
+          <p style={{ fontSize: 12, marginBottom: 4 }}>
+            Used: {storage ? formatBytes(storage.usageBytes) : '—'}
+            {storage?.quotaBytes ? ` of ${formatBytes(storage.quotaBytes)} available` : ''}
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8 }}>
+            Everything is stored only in this browser — there is no cloud sync, and storage can be evicted under
+            pressure (especially in Safari). Export a backup regularly.
+          </p>
+          {!persisted ? (
+            <Button label="Request persistent storage" variant="secondary" onClick={onPersist} />
+          ) : (
+            <p style={{ fontSize: 12, color: 'var(--color-success)' }}>Persistent storage granted.</p>
+          )}
+          <div className="btn-row" style={{ marginTop: 8 }}>
+            <Button label="Export Backup" onClick={onExport} loading={busy} />
+            <Button label="Import Backup" variant="secondary" onClick={() => importInputRef.current?.click()} disabled={busy} />
+          </div>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".zip"
+            style={{ display: 'none' }}
+            onChange={(e) => onImportFile(e.target.files?.[0])}
+          />
+          {message ? <p style={{ fontSize: 12, marginTop: 8 }}>{message}</p> : null}
+        </div>
+
+        <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+          API keys above are stored unencrypted in this browser's local storage (no OS keychain equivalent in a
+          browser) — avoid using a shared or public device.
+        </p>
+      </div>
     </Screen>
   );
 }
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-  },
-  section: {
-    marginBottom: 24,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    marginBottom: 10,
-  },
-  hint: {
-    fontSize: 12,
-    color: colors.text,
-    marginBottom: 8,
-  },
-  hintSmall: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginBottom: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-});

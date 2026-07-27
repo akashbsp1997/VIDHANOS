@@ -1,20 +1,17 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { format } from 'date-fns';
 import { useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { Link } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { ListRow } from '@/components/ListRow';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
-import { caseRepository } from '@/db/repositories/caseRepository';
-import { useFocusRefresh } from '@/hooks/useFocusRefresh';
-import type { MainTabScreenProps } from '@/navigation/types';
+import { casesRepo } from '@/db/repositories/casesRepo';
 
-type Props = MainTabScreenProps<'Cases'>;
-
-export function CaseListScreen({ navigation }: Props) {
-  const { data: cases, loading } = useFocusRefresh(() => caseRepository.list());
+export function CaseListScreen() {
+  const cases = useLiveQuery(() => casesRepo.list());
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
@@ -31,32 +28,25 @@ export function CaseListScreen({ navigation }: Props) {
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <TextField label="Search" value={query} onChangeText={setQuery} placeholder="Search by title, forum, CNR" />
-        <Button label="Add Case" onPress={() => navigation.navigate('CaseForm', {})} />
-      </View>
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
+      <div className="screen-header">
+        <TextField label="Search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by title, forum, CNR" />
+        <Link to="/cases/new">
+          <Button label="Add Case" />
+        </Link>
+      </div>
+      {filtered.length === 0 ? (
+        <EmptyState title="No cases yet" message="Add your first case to start tracking it." />
+      ) : (
+        filtered.map((c) => (
           <ListRow
-            title={item.title}
-            subtitle={[item.caseType, item.forumName].filter(Boolean).join(' · ') || undefined}
-            meta={item.nextHearingDate ? format(new Date(item.nextHearingDate), 'dd MMM') : item.caseStatus}
-            onPress={() => navigation.navigate('CaseDetail', { caseId: item.id })}
+            key={c.id}
+            title={c.title}
+            subtitle={[c.caseType, c.forumName].filter(Boolean).join(' · ') || undefined}
+            meta={c.nextHearingDate ? format(new Date(c.nextHearingDate), 'dd MMM') : c.caseStatus}
+            to={`/cases/${c.id}`}
           />
-        )}
-        ListEmptyComponent={
-          !loading ? <EmptyState title="No cases yet" message="Add your first case to start tracking it." /> : null
-        }
-      />
+        ))
+      )}
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: {
-    padding: 16,
-    paddingBottom: 0,
-  },
-});

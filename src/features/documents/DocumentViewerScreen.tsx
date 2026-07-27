@@ -1,67 +1,46 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { format } from 'date-fns';
-import * as Sharing from 'expo-sharing';
-import { useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
-import { documentRepository } from '@/db/repositories/documentRepository';
-import { useFocusRefresh } from '@/hooks/useFocusRefresh';
-import type { RootStackScreenProps } from '@/navigation/types';
-import { deleteFile, resolveUri } from '@/services/fileStorage';
-import { colors } from '@/theme/colors';
+import { documentsRepo } from '@/db/repositories/documentsRepo';
 
-type Props = RootStackScreenProps<'DocumentViewer'>;
+export function DocumentViewerScreen() {
+  const { caseId, documentId } = useParams<{ caseId: string; documentId: string }>();
+  const navigate = useNavigate();
+  const document = useLiveQuery(() => (documentId ? documentsRepo.get(documentId) : undefined), [documentId]);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
-export function DocumentViewerScreen({ route, navigation }: Props) {
-  const { documentId } = route.params;
-  const { data: document } = useFocusRefresh(() => documentRepository.get(documentId), [documentId]);
-  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!document) return;
+    const url = URL.createObjectURL(document.fileBlob);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [document]);
 
-  if (!document) return <Screen><></></Screen>;
+  if (!document || !documentId) return <Screen>{null}</Screen>;
 
-  const absoluteUri = resolveUri(document.fileUri);
-
-  const onOpen = async () => {
-    setBusy(true);
-    const available = await Sharing.isAvailableAsync();
-    if (available) {
-      await Sharing.shareAsync(absoluteUri, { mimeType: document.mimeType ?? undefined });
-    }
-    setBusy(false);
-  };
-
-  const onDelete = () => {
-    Alert.alert('Delete document', 'This removes the file from device storage.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          deleteFile(document.fileUri);
-          await documentRepository.remove(document.id);
-          navigation.goBack();
-        },
-      },
-    ]);
+  const onDelete = async () => {
+    if (!confirm('Delete this document? This removes the file from device storage.')) return;
+    await documentsRepo.remove(documentId);
+    navigate(`/cases/${caseId}`);
   };
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content}>
-        {document.fileType === 'image' ? (
-          <Image source={{ uri: absoluteUri }} style={styles.image} resizeMode="contain" />
-        ) : (
-          <View style={styles.pdfPlaceholder}>
-            <Text style={styles.pdfIcon}>PDF</Text>
-          </View>
-        )}
-
-        <Text style={styles.fileName}>{document.fileName}</Text>
-        <Text style={styles.meta}>Added {format(new Date(document.createdAt), 'dd MMM yyyy')}</Text>
-        {document.source !== 'manual' ? (
-          <Text style={styles.sourceTag}>Source: {document.source}</Text>
+      <div className="screen-header">
+        {document.fileType === 'image' && objectUrl ? (
+          <img src={objectUrl} alt="" style={{ width: '100%', borderRadius: 12, marginBottom: 12 }} />
+        ) : document.fileType === 'pdf' && objectUrl ? (
+          <embed src={objectUrl} type="application/pdf" style={{ width: '100%', height: 400, borderRadius: 12, marginBottom: 12 }} />
         ) : null}
+
+        <p style={{ fontWeight: 700, fontSize: 17, margin: '0 0 2px' }}>{document.fileName}</p>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '0 0 12px' }}>
+          Added {format(new Date(document.createdAt), 'dd MMM yyyy')}
+        </p>
 
         {document.pageCount ? <MetaRow label="Pages" value={String(document.pageCount)} /> : null}
         {document.pdfTitle ? <MetaRow label="PDF Title" value={document.pdfTitle} /> : null}
@@ -70,93 +49,31 @@ export function DocumentViewerScreen({ route, navigation }: Props) {
           <MetaRow label="Taken at" value={format(new Date(document.exifTakenAt), 'dd MMM yyyy, h:mm a')} />
         ) : null}
         {document.exifCameraModel ? <MetaRow label="Camera" value={document.exifCameraModel} /> : null}
-        {document.fileSizeBytes ? (
-          <MetaRow label="Size" value={`${(document.fileSizeBytes / 1024).toFixed(0)} KB`} />
-        ) : null}
+        {document.fileSizeBytes ? <MetaRow label="Size" value={`${(document.fileSizeBytes / 1024).toFixed(0)} KB`} /> : null}
 
-        <View style={styles.actions}>
-          <Button label="Open / Share" onPress={onOpen} loading={busy} />
+        <div className="btn-row" style={{ flexDirection: 'column', marginTop: 20 }}>
+          {objectUrl ? (
+            <a href={objectUrl} download={document.fileName}>
+              <Button label="Download" />
+            </a>
+          ) : null}
           <Button
             label="Analyze with AI"
             variant="secondary"
-            onPress={() => navigation.navigate('GuidanceDetail', { analysisId: `new:${document.id}` })}
+            onClick={() => navigate(`/guidance/new:${documentId}`)}
           />
-          <Button label="Delete" variant="danger" onPress={onDelete} />
-        </View>
-      </ScrollView>
+          <Button label="Delete" variant="danger" onClick={onDelete} />
+        </div>
+      </div>
     </Screen>
   );
 }
 
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.metaRow}>
-      <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
-    </View>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
+      <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 600 }}>{value}</span>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-  },
-  image: {
-    width: '100%',
-    height: 240,
-    borderRadius: 12,
-    backgroundColor: colors.border,
-    marginBottom: 12,
-  },
-  pdfPlaceholder: {
-    width: '100%',
-    height: 160,
-    borderRadius: 12,
-    backgroundColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  pdfIcon: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
-  fileName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  meta: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  sourceTag: {
-    fontSize: 11,
-    color: colors.primary,
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    marginTop: 8,
-  },
-  metaLabel: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  metaValue: {
-    fontSize: 12,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  actions: {
-    marginTop: 20,
-    gap: 10,
-  },
-});

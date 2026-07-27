@@ -1,143 +1,126 @@
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
-import { generateId } from '@/db/id';
-import { documentRepository } from '@/db/repositories/documentRepository';
-import type { RootStackScreenProps } from '@/navigation/types';
-import { exifFromPickerResult, extractExif, type ExifData } from '@/services/exif';
-import { saveIncomingDocument } from '@/services/fileStorage';
-import { extractPdfMetadata, type PdfMetadata } from '@/services/pdfMetadata';
-import { colors } from '@/theme/colors';
-
-type Props = RootStackScreenProps<'DocumentUpload'>;
+import { generateId } from '@/lib/ids';
+import { documentsRepo } from '@/db/repositories/documentsRepo';
+import { extractExif, type ExifData } from '@/services/fileMetadata/exifMeta';
+import { extractPdfMetadata, type PdfMetadata } from '@/services/fileMetadata/pdfMeta';
+import { generateImageThumbnail } from '@/services/fileMetadata/thumbnail';
 
 interface PendingDocument {
-  uri: string;
-  fileName: string;
-  mimeType: string | null;
+  file: File;
   fileType: 'image' | 'pdf';
   pdfMeta: PdfMetadata | null;
   exifMeta: ExifData | null;
+  previewUrl: string | null;
 }
 
-function extensionFor(fileName: string, fallback: string): string {
-  const match = /\.([a-zA-Z0-9]+)$/.exec(fileName);
-  return match ? match[1].toLowerCase() : fallback;
-}
-
-export function DocumentUploadScreen({ route, navigation }: Props) {
-  const { caseId } = route.params;
+export function DocumentUploadScreen() {
+  const { caseId } = useParams<{ caseId: string }>();
+  const navigate = useNavigate();
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingDocument | null>(null);
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const handleImageResult = async (result: ImagePicker.ImagePickerResult) => {
-    if (result.canceled || result.assets.length === 0) return;
-    const asset = result.assets[0];
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
     setProcessing(true);
-    const exifMeta = exifFromPickerResult(asset.exif) ?? (await extractExif(asset.uri));
-    setPending({
-      uri: asset.uri,
-      fileName: asset.fileName ?? `photo-${Date.now()}.jpg`,
-      mimeType: asset.mimeType ?? 'image/jpeg',
-      fileType: 'image',
-      pdfMeta: null,
-      exifMeta,
-    });
-    setProcessing(false);
-  };
 
-  const onTakePhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) return;
-    const result = await ImagePicker.launchCameraAsync({ exif: true, quality: 0.9 });
-    await handleImageResult(result);
-  };
-
-  const onChooseFromGallery = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], exif: true, quality: 0.9 });
-    await handleImageResult(result);
-  };
-
-  const onChoosePdf = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf'], copyToCacheDirectory: true });
-    if (result.canceled || result.assets.length === 0) return;
-    const asset = result.assets[0];
-    setProcessing(true);
-    const pdfMeta = await extractPdfMetadata(asset.uri);
-    setPending({
-      uri: asset.uri,
-      fileName: asset.name,
-      mimeType: asset.mimeType ?? 'application/pdf',
-      fileType: 'pdf',
-      pdfMeta,
-      exifMeta: null,
-    });
+    if (file.type === 'application/pdf') {
+      const pdfMeta = await extractPdfMetadata(file);
+      setPending({ file, fileType: 'pdf', pdfMeta, exifMeta: null, previewUrl: null });
+    } else {
+      const exifMeta = await extractExif(file);
+      setPending({ file, fileType: 'image', pdfMeta: null, exifMeta, previewUrl: URL.createObjectURL(file) });
+    }
     setProcessing(false);
   };
 
   const onSave = async () => {
-    if (!pending) return;
+    if (!pending || !caseId) return;
     setSaving(true);
-    const documentId = generateId();
-    const ext = extensionFor(pending.fileName, pending.fileType === 'pdf' ? 'pdf' : 'jpg');
-    const { relativePath, sizeBytes } = await saveIncomingDocument(pending.uri, caseId, documentId, ext);
 
-    await documentRepository.create({
-      id: documentId,
+    const thumbnailBlob = pending.fileType === 'image' ? await generateImageThumbnail(pending.file) : undefined;
+
+    await documentsRepo.create({
+      id: generateId(),
       caseId,
-      fileName: pending.fileName,
-      fileUri: relativePath,
+      fileName: pending.file.name || (pending.fileType === 'pdf' ? 'document.pdf' : 'photo.jpg'),
+      fileBlob: pending.file,
+      thumbnailBlob,
       fileType: pending.fileType,
-      mimeType: pending.mimeType,
-      fileSizeBytes: sizeBytes,
-      pageCount: pending.pdfMeta?.pageCount ?? null,
-      pdfTitle: pending.pdfMeta?.title ?? null,
-      pdfAuthor: pending.pdfMeta?.author ?? null,
-      pdfCreatedAt: pending.pdfMeta?.createdAt ?? null,
-      pdfModifiedAt: pending.pdfMeta?.modifiedAt ?? null,
-      exifTakenAt: pending.exifMeta?.takenAt ?? null,
-      exifGpsLat: pending.exifMeta?.gpsLat ?? null,
-      exifGpsLng: pending.exifMeta?.gpsLng ?? null,
-      exifCameraModel: pending.exifMeta?.cameraModel ?? null,
+      mimeType: pending.file.type,
+      fileSizeBytes: pending.file.size,
+      pageCount: pending.pdfMeta?.pageCount,
+      pdfTitle: pending.pdfMeta?.title ?? undefined,
+      pdfAuthor: pending.pdfMeta?.author ?? undefined,
+      pdfCreatedAt: pending.pdfMeta?.createdAt ?? undefined,
+      pdfModifiedAt: pending.pdfMeta?.modifiedAt ?? undefined,
+      exifTakenAt: pending.exifMeta?.takenAt ?? undefined,
+      exifGpsLat: pending.exifMeta?.gpsLat ?? undefined,
+      exifGpsLng: pending.exifMeta?.gpsLng ?? undefined,
+      exifCameraModel: pending.exifMeta?.cameraModel ?? undefined,
     });
 
+    if (pending.previewUrl) URL.revokeObjectURL(pending.previewUrl);
     setSaving(false);
-    navigation.goBack();
+    navigate(`/cases/${caseId}`);
+  };
+
+  const onDiscard = () => {
+    if (pending?.previewUrl) URL.revokeObjectURL(pending.previewUrl);
+    setPending(null);
   };
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.pickerRow}>
-          <Button label="Take Photo" onPress={onTakePhoto} />
-          <Button label="Choose from Gallery" variant="secondary" onPress={onChooseFromGallery} />
-          <Button label="Choose PDF" variant="secondary" onPress={onChoosePdf} />
-        </View>
+      <div className="screen-header">
+        <div className="btn-row" style={{ flexDirection: 'column' }}>
+          <Button label="Take Photo" onClick={() => cameraInputRef.current?.click()} />
+          <Button label="Choose File (image or PDF)" variant="secondary" onClick={() => fileInputRef.current?.click()} />
+        </div>
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={(e) => handleFile(e.target.files?.[0])}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,application/pdf"
+          style={{ display: 'none' }}
+          onChange={(e) => handleFile(e.target.files?.[0])}
+        />
 
-        {processing ? <Text style={styles.hint}>Reading file metadata…</Text> : null}
+        {processing ? <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Reading file metadata…</p> : null}
 
         {pending ? (
-          <View style={styles.previewCard}>
-            <Text style={styles.previewTitle}>{pending.fileName}</Text>
-            <Text style={styles.previewMeta}>{pending.fileType === 'pdf' ? 'PDF document' : 'Image'}</Text>
+          <div className="card" style={{ marginTop: 16 }}>
+            {pending.previewUrl ? (
+              <img src={pending.previewUrl} alt="" style={{ width: '100%', borderRadius: 8, marginBottom: 10 }} />
+            ) : null}
+            <p style={{ fontWeight: 700, margin: '0 0 2px' }}>{pending.file.name || 'Untitled'}</p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '0 0 10px' }}>
+              {pending.fileType === 'pdf' ? 'PDF document' : 'Image'}
+            </p>
 
             {pending.pdfMeta ? (
-              <View style={styles.metaBlock}>
+              <>
                 <MetaRow label="Pages" value={String(pending.pdfMeta.pageCount)} />
                 {pending.pdfMeta.title ? <MetaRow label="Title" value={pending.pdfMeta.title} /> : null}
                 {pending.pdfMeta.author ? <MetaRow label="Author" value={pending.pdfMeta.author} /> : null}
-              </View>
+              </>
             ) : null}
 
             {pending.exifMeta ? (
-              <View style={styles.metaBlock}>
+              <>
                 {pending.exifMeta.takenAt ? (
                   <MetaRow label="Taken at" value={new Date(pending.exifMeta.takenAt).toLocaleString()} />
                 ) : null}
@@ -145,77 +128,25 @@ export function DocumentUploadScreen({ route, navigation }: Props) {
                 {pending.exifMeta.gpsLat && pending.exifMeta.gpsLng ? (
                   <MetaRow label="Location" value={`${pending.exifMeta.gpsLat.toFixed(4)}, ${pending.exifMeta.gpsLng.toFixed(4)}`} />
                 ) : null}
-              </View>
+              </>
             ) : null}
 
-            <View style={styles.previewActions}>
-              <Button label="Save to Case" onPress={onSave} loading={saving} />
-              <Button label="Discard" variant="secondary" onPress={() => setPending(null)} />
-            </View>
-          </View>
+            <div className="btn-row" style={{ flexDirection: 'column', marginTop: 12 }}>
+              <Button label="Save to Case" onClick={onSave} loading={saving} />
+              <Button label="Discard" variant="secondary" onClick={onDiscard} />
+            </div>
+          </div>
         ) : null}
-      </ScrollView>
+      </div>
     </Screen>
   );
 }
 
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.metaRow}>
-      <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
-    </View>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
+      <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
+      <span style={{ fontWeight: 600 }}>{value}</span>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  pickerRow: {
-    gap: 10,
-  },
-  hint: {
-    color: colors.textMuted,
-    fontSize: 13,
-  },
-  previewCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-  },
-  previewTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  previewMeta: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginBottom: 10,
-  },
-  metaBlock: {
-    marginBottom: 8,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  metaLabel: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  metaValue: {
-    fontSize: 12,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  previewActions: {
-    marginTop: 8,
-    gap: 8,
-  },
-});

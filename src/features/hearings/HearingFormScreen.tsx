@@ -1,20 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useNavigate, useParams } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { DateField } from '@/components/DateField';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
-import { hearingRepository } from '@/db/repositories/hearingRepository';
-import type { RootStackScreenProps } from '@/navigation/types';
-import { cancelHearingReminder, scheduleHearingReminder } from '@/services/notifications';
-import { colors } from '@/theme/colors';
-
-type Props = RootStackScreenProps<'HearingForm'>;
+import { hearingsRepo } from '@/db/repositories/hearingsRepo';
 
 interface HearingFormValues {
-  hearingDate: number | null;
+  hearingDate: number | undefined;
   purpose: string;
   judgeName: string;
   orderSummary: string;
@@ -24,7 +19,7 @@ interface HearingFormValues {
 }
 
 const defaultValues: HearingFormValues = {
-  hearingDate: null,
+  hearingDate: undefined,
   purpose: '',
   judgeName: '',
   orderSummary: '',
@@ -40,9 +35,11 @@ const REMINDER_OPTIONS = [
   { label: '1 week before', minutes: 10080 },
 ];
 
-export function HearingFormScreen({ route, navigation }: Props) {
-  const { caseId, hearingId } = route.params;
+export function HearingFormScreen() {
+  const { caseId, hearingId } = useParams<{ caseId: string; hearingId?: string }>();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(!!hearingId);
+
   const {
     control,
     handleSubmit,
@@ -54,7 +51,7 @@ export function HearingFormScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     if (!hearingId) return;
-    hearingRepository.get(hearingId).then((hearing) => {
+    hearingsRepo.get(hearingId).then((hearing) => {
       if (hearing) {
         reset({
           hearingDate: hearing.hearingDate,
@@ -74,146 +71,90 @@ export function HearingFormScreen({ route, navigation }: Props) {
   const reminderOffsetMinutes = watch('reminderOffsetMinutes');
 
   const onSubmit = handleSubmit(async (values) => {
-    if (!values.hearingDate) return;
+    if (!values.hearingDate || !caseId) return;
 
     const payload = {
       caseId,
       hearingDate: values.hearingDate,
-      purpose: values.purpose.trim() || null,
-      judgeName: values.judgeName.trim() || null,
-      orderSummary: values.orderSummary.trim() || null,
+      purpose: values.purpose.trim() || undefined,
+      judgeName: values.judgeName.trim() || undefined,
+      orderSummary: values.orderSummary.trim() || undefined,
       orderType: values.orderType,
-      isDeadline: values.isDeadline ? 1 : 0,
+      isDeadline: (values.isDeadline ? 1 : 0) as 0 | 1,
       reminderOffsetMinutes: values.reminderOffsetMinutes,
     };
 
-    let savedId = hearingId;
     if (hearingId) {
-      await hearingRepository.update(hearingId, payload);
+      await hearingsRepo.update(hearingId, payload);
     } else {
-      const created = await hearingRepository.create(payload);
-      savedId = created.id;
+      await hearingsRepo.create(payload);
     }
 
-    if (savedId) {
-      const saved = await hearingRepository.get(savedId);
-      if (saved) await scheduleHearingReminder(saved);
-    }
-
-    navigation.goBack();
+    navigate(`/cases/${caseId}`);
   });
 
-  const onDelete = () => {
-    if (!hearingId) return;
-    Alert.alert('Delete hearing', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          const existing = await hearingRepository.get(hearingId);
-          if (existing?.notificationId) await cancelHearingReminder(existing.notificationId);
-          await hearingRepository.remove(hearingId);
-          navigation.goBack();
-        },
-      },
-    ]);
+  const onDelete = async () => {
+    if (!hearingId || !caseId) return;
+    if (!confirm('Delete this hearing/order? This cannot be undone.')) return;
+    await hearingsRepo.remove(hearingId);
+    navigate(`/cases/${caseId}`);
   };
 
-  if (loading) return <Screen><></></Screen>;
+  if (loading) return <Screen>{null}</Screen>;
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <form className="screen-header" onSubmit={onSubmit}>
         <Controller
           control={control}
           name="hearingDate"
           rules={{ required: true }}
           render={({ field }) => (
-            <DateField label={isDeadline ? 'Deadline date' : 'Hearing date'} value={field.value} onChange={field.onChange} mode="datetime" />
+            <DateField label={isDeadline ? 'Deadline date' : 'Hearing date'} value={field.value} onChange={field.onChange} includeTime />
           )}
         />
-        {errors.hearingDate ? <Text style={styles.error}>A date is required</Text> : null}
+        {errors.hearingDate ? <p className="field-error">A date is required</p> : null}
 
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>This is a filing deadline (not a hearing)</Text>
-          <Controller
-            control={control}
-            name="isDeadline"
-            render={({ field }) => <Switch value={field.value} onValueChange={field.onChange} />}
-          />
-        </View>
+        <label className="checkbox-row" style={{ padding: '0 0 14px', border: 'none' }}>
+          <input type="checkbox" checked={isDeadline} onChange={(e) => setValue('isDeadline', e.target.checked)} />
+          This is a filing deadline (not a hearing)
+        </label>
 
         <Controller
           control={control}
           name="purpose"
           render={({ field }) => (
-            <TextField label="Purpose" value={field.value} onChangeText={field.onChange} placeholder="e.g. Arguments, Evidence, Filing of written statement" />
+            <TextField label="Purpose" placeholder="e.g. Arguments, Evidence, Filing of written statement" {...field} />
           )}
         />
-        <Controller
-          control={control}
-          name="judgeName"
-          render={({ field }) => <TextField label="Judge" value={field.value} onChangeText={field.onChange} />}
-        />
+        <Controller control={control} name="judgeName" render={({ field }) => <TextField label="Judge" {...field} />} />
         <Controller
           control={control}
           name="orderSummary"
           render={({ field }) => (
-            <TextField label="Order / outcome summary" value={field.value} onChangeText={field.onChange} multiline placeholder="What happened / was ordered on this date" />
+            <TextField label="Order / outcome summary" multiline placeholder="What happened / was ordered on this date" {...field} />
           )}
         />
 
-        <Text style={styles.label}>Reminder</Text>
-        <View style={styles.reminderOptions}>
-          {REMINDER_OPTIONS.map((opt) => (
-            <Button
-              key={opt.minutes}
-              label={opt.label}
-              variant={reminderOffsetMinutes === opt.minutes ? 'primary' : 'secondary'}
-              onPress={() => setValue('reminderOffsetMinutes', opt.minutes)}
-            />
-          ))}
-        </View>
+        <div className="field">
+          <span className="field-label">Reminder</span>
+          <div className="btn-row" style={{ flexDirection: 'column' }}>
+            {REMINDER_OPTIONS.map((opt) => (
+              <Button
+                key={opt.minutes}
+                label={opt.label}
+                variant={reminderOffsetMinutes === opt.minutes ? 'primary' : 'secondary'}
+                onClick={() => setValue('reminderOffsetMinutes', opt.minutes)}
+              />
+            ))}
+          </div>
+        </div>
 
-        <Button label={hearingId ? 'Save Changes' : 'Add Hearing'} onPress={onSubmit} loading={isSubmitting} />
-        {hearingId ? <Button label="Delete" onPress={onDelete} variant="danger" /> : null}
-      </ScrollView>
+        <div className="btn-row" style={{ flexDirection: 'column' }}>
+          <Button label={hearingId ? 'Save Changes' : 'Add Hearing'} type="submit" loading={isSubmitting} />
+          {hearingId ? <Button label="Delete" variant="danger" onClick={onDelete} /> : null}
+        </div>
+      </form>
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-    gap: 4,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  switchLabel: {
-    fontSize: 14,
-    color: colors.text,
-    flex: 1,
-    marginRight: 12,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginBottom: 6,
-  },
-  reminderOptions: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 12,
-    marginBottom: 10,
-    marginTop: -8,
-  },
-});

@@ -1,48 +1,43 @@
-import { File } from 'expo-file-system';
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useNavigate, useParams } from 'react-router';
 
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { Screen } from '@/components/Screen';
-import { documentAnalysisRepository } from '@/db/repositories/documentAnalysisRepository';
-import { documentRepository } from '@/db/repositories/documentRepository';
-import type { RootStackScreenProps } from '@/navigation/types';
-import { GUIDANCE_DISCLAIMER } from '@/services/ai/aiProvider';
+import { documentAnalysesRepo } from '@/db/repositories/documentAnalysesRepo';
+import { documentsRepo } from '@/db/repositories/documentsRepo';
+import type { DocumentAnalysis, RecommendationItem } from '@/db/schema';
+import { blobToBase64 } from '@/lib/base64';
 import { runDocumentAnalysis } from '@/services/ai/aiGuidanceService';
-import { resolveUri } from '@/services/fileStorage';
+import { GUIDANCE_DISCLAIMER } from '@/services/ai/guidancePrompt';
 import { useIsOnline } from '@/services/network';
-import { colors } from '@/theme/colors';
-import type { RecommendationItem } from '@/db/schema';
-import type { DocumentAnalysis as DocumentAnalysisRow } from '@/types/db';
 
-type Props = RootStackScreenProps<'GuidanceDetail'>;
-
-export function GuidanceDetailScreen({ route, navigation }: Props) {
-  const { analysisId } = route.params;
+export function GuidanceDetailScreen() {
+  const { analysisId } = useParams<{ analysisId: string }>();
+  const navigate = useNavigate();
   const isOnline = useIsOnline();
 
-  const [analysis, setAnalysis] = useState<DocumentAnalysisRow | null>(null);
+  const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const isNew = analysisId.startsWith('new:');
-  const documentId = isNew ? analysisId.slice('new:'.length) : null;
+  const isNew = analysisId?.startsWith('new:') ?? false;
+  const documentId = isNew ? analysisId!.slice('new:'.length) : null;
 
   const runInitialAnalysis = useCallback(async () => {
     if (!documentId) return;
     setLoading(true);
     setError(null);
     try {
-      const document = await documentRepository.get(documentId);
+      const document = await documentsRepo.get(documentId);
       if (!document) throw new Error('Document not found.');
 
       let fileBase64: string | undefined;
       if (document.fileType === 'image' || document.fileType === 'pdf') {
-        const uri = resolveUri(document.fileUri);
-        fileBase64 = await new File(uri).base64();
+        fileBase64 = await blobToBase64(document.fileBlob);
       }
 
       const result = await runDocumentAnalysis({
@@ -51,41 +46,44 @@ export function GuidanceDetailScreen({ route, navigation }: Props) {
         fileName: document.fileName,
         fileBase64,
         mimeType: document.mimeType,
-        isOnline,
       });
       setAnalysis(result);
-      navigation.setParams({ analysisId: result.id });
+      navigate(`/guidance/${result.id}`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed.');
     } finally {
       setLoading(false);
     }
-  }, [documentId, isOnline, navigation]);
+  }, [documentId, navigate]);
 
   useEffect(() => {
+    if (!analysisId) return;
     if (isNew) {
+      if (!isOnline) {
+        setLoading(false);
+        return;
+      }
       runInitialAnalysis();
       return;
     }
-    documentAnalysisRepository.get(analysisId).then((existing) => {
+    documentAnalysesRepo.get(analysisId).then((existing) => {
       setAnalysis(existing ?? null);
       setLoading(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisId]);
+  }, [analysisId, isOnline]);
 
   const onSubmitAnswers = async () => {
     if (!analysis) return;
     setSubmitting(true);
     setError(null);
     try {
-      const document = await documentRepository.get(analysis.documentId);
+      const document = await documentsRepo.get(analysis.documentId);
       if (!document) throw new Error('Document not found.');
 
       let fileBase64: string | undefined;
       if (document.fileType === 'image' || document.fileType === 'pdf') {
-        const uri = resolveUri(document.fileUri);
-        fileBase64 = await new File(uri).base64();
+        fileBase64 = await blobToBase64(document.fileBlob);
       }
 
       const result = await runDocumentAnalysis({
@@ -94,7 +92,6 @@ export function GuidanceDetailScreen({ route, navigation }: Props) {
         fileName: document.fileName,
         fileBase64,
         mimeType: document.mimeType,
-        isOnline,
         priorAnalysisId: analysis.id,
         userAnswers: answers,
       });
@@ -105,6 +102,15 @@ export function GuidanceDetailScreen({ route, navigation }: Props) {
       setSubmitting(false);
     }
   };
+
+  if (isNew && !isOnline) {
+    return (
+      <Screen>
+        <OfflineBanner />
+        <EmptyState title="AI Guidance needs an internet connection" message="Reconnect and try again." />
+      </Screen>
+    );
+  }
 
   if (loading) {
     return (
@@ -117,10 +123,10 @@ export function GuidanceDetailScreen({ route, navigation }: Props) {
   if (error) {
     return (
       <Screen>
-        <View style={styles.content}>
+        <div className="screen-header">
           <EmptyState title="Couldn't complete analysis" message={error} />
-          <Button label="Retry" onPress={runInitialAnalysis} />
-        </View>
+          <Button label="Retry" onClick={runInitialAnalysis} />
+        </div>
       </Screen>
     );
   }
@@ -135,36 +141,37 @@ export function GuidanceDetailScreen({ route, navigation }: Props) {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.disclaimer}>
-          <Text style={styles.disclaimerText}>{GUIDANCE_DISCLAIMER}</Text>
-        </View>
-        <Text style={styles.providerTag}>
-          {analysis.provider === 'gemini' ? 'Analyzed with Gemini (online)' : 'Analyzed with offline model'}
-        </Text>
+      <div className="screen-header">
+        <div className="banner-warning" style={{ margin: '0 0 8px' }}>
+          {GUIDANCE_DISCLAIMER}
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 12 }}>
+          Analyzed with Gemini (online)
+        </p>
 
         {analysis.issueSummary ? (
           <Section title="Issue summary">
-            <Text style={styles.bodyText}>{analysis.issueSummary}</Text>
+            <p style={{ fontSize: 14, lineHeight: 1.5 }}>{analysis.issueSummary}</p>
           </Section>
         ) : null}
 
         {analysis.status === 'needs_clarification' && analysis.clarifyingQuestions?.length ? (
           <Section title="A few questions before I can recommend next steps">
             {analysis.clarifyingQuestions.map((question) => (
-              <View key={question} style={styles.questionBlock}>
-                <Text style={styles.questionText}>{question}</Text>
-                <TextInput
-                  style={styles.answerInput}
-                  placeholder="Your answer"
-                  placeholderTextColor={colors.textMuted}
+              <div key={question} style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>{question}</label>
+                <textarea
+                  className="field-textarea"
                   value={answers[question] ?? ''}
-                  onChangeText={(text) => setAnswers((prev) => ({ ...prev, [question]: text }))}
-                  multiline
+                  onChange={(e) => setAnswers((prev) => ({ ...prev, [question]: e.target.value }))}
                 />
-              </View>
+              </div>
             ))}
-            <Button label="Submit Answers" onPress={onSubmitAnswers} loading={submitting} />
+            {!isOnline ? (
+              <OfflineBanner />
+            ) : (
+              <Button label="Submit Answers" onClick={onSubmitAnswers} loading={submitting} />
+            )}
           </Section>
         ) : null}
 
@@ -181,23 +188,25 @@ export function GuidanceDetailScreen({ route, navigation }: Props) {
         {analysis.nextSteps?.length ? (
           <Section title="Suggested next steps">
             {analysis.nextSteps.map((step, index) => (
-              <Text key={index} style={styles.stepText}>
+              <p key={index} style={{ fontSize: 13, marginBottom: 6, lineHeight: 1.4 }}>
                 {index + 1}. {step}
-              </Text>
+              </p>
             ))}
           </Section>
         ) : null}
-      </ScrollView>
+      </div>
     </Screen>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <div style={{ marginBottom: 20 }}>
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>
+        {title}
+      </p>
       {children}
-    </View>
+    </div>
   );
 }
 
@@ -205,92 +214,11 @@ function RecommendationSection({ title, items }: { title: string; items: Recomme
   return (
     <Section title={title}>
       {items.map((item, index) => (
-        <View key={index} style={styles.recommendationRow}>
-          <Text style={styles.recommendationName}>{item.name}</Text>
-          <Text style={styles.recommendationReason}>{item.reason}</Text>
-        </View>
+        <div key={index} className="recommendation-row">
+          <div className="recommendation-name">{item.name}</div>
+          <div className="recommendation-reason">{item.reason}</div>
+        </div>
       ))}
     </Section>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-    gap: 4,
-  },
-  disclaimer: {
-    backgroundColor: '#FFF4E5',
-    borderColor: colors.warning,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-  },
-  disclaimerText: {
-    color: colors.warning,
-    fontSize: 12,
-  },
-  providerTag: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginBottom: 12,
-  },
-  section: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  bodyText: {
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 20,
-  },
-  questionBlock: {
-    marginBottom: 12,
-  },
-  questionText: {
-    fontSize: 13,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  answerInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 13,
-    color: colors.text,
-    backgroundColor: colors.surface,
-  },
-  recommendationRow: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-  },
-  recommendationName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  recommendationReason: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  stepText: {
-    fontSize: 13,
-    color: colors.text,
-    marginBottom: 6,
-    lineHeight: 18,
-  },
-});
