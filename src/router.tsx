@@ -46,6 +46,20 @@ export const router = createBrowserRouter([
           return { Component: DocumentViewerScreen };
         },
       },
+      {
+        path: '/cases/:caseId/drafts/new',
+        lazy: async () => {
+          const { DraftEditorScreen } = await import('@/features/drafts/DraftEditorScreen');
+          return { Component: DraftEditorScreen };
+        },
+      },
+      {
+        path: '/cases/:caseId/drafts/:draftId',
+        lazy: async () => {
+          const { DraftEditorScreen } = await import('@/features/drafts/DraftEditorScreen');
+          return { Component: DraftEditorScreen };
+        },
+      },
       { path: '/clients', element: <ClientListScreen /> },
       { path: '/clients/new', element: <ClientFormScreen /> },
       { path: '/clients/:clientId/edit', element: <ClientFormScreen /> },

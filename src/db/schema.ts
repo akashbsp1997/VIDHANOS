@@ -156,6 +156,17 @@ export interface SettingsEntry {
   value: string;
 }
 
+export interface Draft {
+  id: string;
+  caseId: string;
+  draftType: string;
+  title: string;
+  content: string;
+  status: 'draft' | 'final';
+  createdAt: number;
+  updatedAt: number;
+}
+
 export const db = new Dexie('vidhanos') as Dexie & {
   clients: EntityTable<Client, 'id'>;
   opponents: EntityTable<Opponent, 'id'>;
@@ -167,6 +178,7 @@ export const db = new Dexie('vidhanos') as Dexie & {
   legalReferences: EntityTable<LegalReference, 'id'>;
   documentAnalyses: EntityTable<DocumentAnalysis, 'id'>;
   settings: EntityTable<SettingsEntry, 'key'>;
+  drafts: EntityTable<Draft, 'id'>;
 };
 
 db.version(1).stores({
@@ -180,4 +192,18 @@ db.version(1).stores({
   legalReferences: 'id, category',
   documentAnalyses: 'id, documentId, caseId',
   settings: 'key',
+});
+
+db.version(2).stores({
+  clients: 'id, name',
+  opponents: 'id, name',
+  cases: 'id, clientId, nextHearingDate, caseStatus, [caseStatus+nextHearingDate]',
+  caseOpponents: 'id, caseId, opponentId, [caseId+opponentId]',
+  hearings: 'id, caseId, hearingDate, isDeadline, [caseId+hearingDate]',
+  documents: 'id, caseId, hearingId',
+  citations: 'id, caseId, indianKanoonDocId',
+  legalReferences: 'id, category',
+  documentAnalyses: 'id, documentId, caseId',
+  settings: 'key',
+  drafts: 'id, caseId',
 });

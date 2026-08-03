@@ -7,12 +7,15 @@ import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { ListRow } from '@/components/ListRow';
 import { Screen } from '@/components/Screen';
+import { SelectField } from '@/components/SelectField';
 import { casesRepo } from '@/db/repositories/casesRepo';
 import { citationsRepo } from '@/db/repositories/citationsRepo';
 import { documentsRepo } from '@/db/repositories/documentsRepo';
+import { draftsRepo } from '@/db/repositories/draftsRepo';
 import { hearingsRepo } from '@/db/repositories/hearingsRepo';
+import { LEGAL_DRAFT_TYPES } from '@/lib/legalEnums';
 
-const TABS = ['Overview', 'Hearings', 'Documents', 'Citations'] as const;
+const TABS = ['Overview', 'Hearings', 'Documents', 'Citations', 'Drafts'] as const;
 type Tab = (typeof TABS)[number];
 
 export function CaseDetailScreen() {
@@ -24,6 +27,8 @@ export function CaseDetailScreen() {
   const hearings = useLiveQuery(() => (caseId ? hearingsRepo.listByCase(caseId) : []), [caseId]);
   const documents = useLiveQuery(() => (caseId ? documentsRepo.listByCase(caseId) : []), [caseId]);
   const citations = useLiveQuery(() => (caseId ? citationsRepo.listByCase(caseId) : []), [caseId]);
+  const drafts = useLiveQuery(() => (caseId ? draftsRepo.listByCase(caseId) : []), [caseId]);
+  const [newDraftType, setNewDraftType] = useState(LEGAL_DRAFT_TYPES[0].value);
 
   if (!caseId || !caseData) return <Screen>{null}</Screen>;
 
@@ -137,6 +142,39 @@ export function CaseDetailScreen() {
                 </div>
                 {c.dateOfJudgment ? <div className="list-row-meta">{format(new Date(c.dateOfJudgment), 'dd MMM yyyy')}</div> : null}
               </div>
+            ))
+          )}
+        </>
+      ) : null}
+
+      {tab === 'Drafts' ? (
+        <>
+          <div className="screen-header">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <div style={{ flex: 1 }}>
+                <SelectField
+                  label="New draft type"
+                  options={LEGAL_DRAFT_TYPES}
+                  value={newDraftType}
+                  onChange={(e) => setNewDraftType(e.target.value)}
+                />
+              </div>
+              <Link to={`/cases/${caseId}/drafts/new?type=${newDraftType}`}>
+                <Button label="Create" />
+              </Link>
+            </div>
+          </div>
+          {drafts?.length === 0 ? (
+            <EmptyState title="No drafts yet" message="Generate an offline template draft from the case's own facts." />
+          ) : (
+            drafts?.map((d) => (
+              <ListRow
+                key={d.id}
+                title={d.title}
+                subtitle={LEGAL_DRAFT_TYPES.find((t) => t.value === d.draftType)?.label ?? d.draftType}
+                meta={d.status === 'final' ? 'Final' : 'Draft'}
+                to={`/cases/${caseId}/drafts/${d.id}`}
+              />
             ))
           )}
         </>
