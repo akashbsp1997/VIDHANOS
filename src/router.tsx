@@ -68,6 +68,13 @@ export const router = createBrowserRouter([
           return { Component: CitationSearchScreen };
         },
       },
+      {
+        path: '/rules',
+        lazy: async () => {
+          const { RulesSearchScreen } = await import('@/features/rules/RulesSearchScreen');
+          return { Component: RulesSearchScreen };
+        },
+      },
       { path: '/settings', element: <SettingsScreen /> },
       { path: '*', element: <NotFoundScreen /> },
     ],

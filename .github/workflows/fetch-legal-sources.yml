@@ -1,0 +1,45 @@
+name: Refresh legal-rules dataset
+
+# Weekly, plus on-demand -- scripts/fetch-legal-sources.mjs re-fetches every entry in the curated,
+# hand-verified scripts/legal-sources-registry.json (India Code for bare acts, the relevant
+# commission/tribunal's own portal for everything else) and writes src/data/legalRules.json, the
+# offline dataset RulesSearchScreen searches. This is what lets the app cite real official
+# rules/regulations with NO live network call at runtime -- the data is refreshed here, on a
+# schedule, and just bundled into the next build. The commit below pushes straight to the app's
+# only branch, which triggers deploy.yml and redeploys the refreshed dataset automatically.
+on:
+  schedule:
+    - cron: "0 3 * * 1" # every Monday 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/new-session-15vcjp
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run fetch-legal-sources
+
+      - name: Commit updated dataset if changed
+        run: |
+          if git diff --quiet -- src/data/legalRules.json; then
+            echo "No changes to src/data/legalRules.json -- nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/data/legalRules.json
+          git commit -m "Refresh legal-rules dataset from official sources"
+          git push origin HEAD:claude/new-session-15vcjp

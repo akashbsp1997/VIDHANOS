@@ -1,0 +1,90 @@
+[
+  {
+    "id": "consumer-protection-act-2019",
+    "category": "consumer",
+    "title": "Consumer Protection Act, 2019",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/bitstream/123456789/15256/1/a2019-35.pdf",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/15256"
+  },
+  {
+    "id": "ncdrc-portal",
+    "category": "consumer",
+    "title": "National Consumer Disputes Redressal Commission (official portal)",
+    "sourceType": "official_portal",
+    "url": "https://ncdrc.nic.in/",
+    "citationUrl": "https://ncdrc.nic.in/"
+  },
+  {
+    "id": "hindu-marriage-act-1955",
+    "category": "family",
+    "title": "Hindu Marriage Act, 1955",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/bitstream/123456789/1560/1/A1955-25.pdf",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/1560"
+  },
+  {
+    "id": "special-marriage-act-1954",
+    "category": "family",
+    "title": "Special Marriage Act, 1954",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/bitstream/123456789/1387/1/A195443.pdf",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/1387"
+  },
+  {
+    "id": "family-courts-act-1984",
+    "category": "family",
+    "title": "Family Courts Act, 1984",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/handle/123456789/1844",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/1844"
+  },
+  {
+    "id": "administrative-tribunals-act-1985",
+    "category": "administrative",
+    "title": "Administrative Tribunals Act, 1985",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/bitstream/123456789/1832/1/AA1985__13admin.pdf",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/1832"
+  },
+  {
+    "id": "rti-act-2005",
+    "category": "administrative",
+    "title": "Right to Information Act, 2005",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/bitstream/123456789/2065/1/aa2005.pdf",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/2065"
+  },
+  {
+    "id": "administrative-tribunals-act-1985-cat",
+    "category": "cat",
+    "title": "Administrative Tribunals Act, 1985 (governs the Central Administrative Tribunal)",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/bitstream/123456789/1832/1/AA1985__13admin.pdf",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/1832"
+  },
+  {
+    "id": "cat-official-portal",
+    "category": "cat",
+    "title": "Central Administrative Tribunal (official portal)",
+    "sourceType": "official_portal",
+    "url": "https://cgat.gov.in/",
+    "citationUrl": "https://cgat.gov.in/"
+  },
+  {
+    "id": "protection-of-human-rights-act-1993",
+    "category": "human_rights",
+    "title": "Protection of Human Rights Act, 1993",
+    "sourceType": "bare_act",
+    "url": "https://www.indiacode.nic.in/handle/123456789/15709",
+    "citationUrl": "https://www.indiacode.nic.in/handle/123456789/15709"
+  },
+  {
+    "id": "nhrc-official-portal",
+    "category": "human_rights",
+    "title": "National Human Rights Commission (official portal)",
+    "sourceType": "official_portal",
+    "url": "https://nhrc.nic.in/",
+    "citationUrl": "https://nhrc.nic.in/"
+  }
+]
