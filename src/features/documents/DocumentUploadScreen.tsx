@@ -8,6 +8,7 @@ import { documentsRepo } from '@/db/repositories/documentsRepo';
 import { extractExif, type ExifData } from '@/services/fileMetadata/exifMeta';
 import { extractPdfMetadata, type PdfMetadata } from '@/services/fileMetadata/pdfMeta';
 import { generateImageThumbnail } from '@/services/fileMetadata/thumbnail';
+import { extractDocumentText } from '@/services/ocr';
 
 interface PendingDocument {
   file: File;
@@ -15,6 +16,8 @@ interface PendingDocument {
   pdfMeta: PdfMetadata | null;
   exifMeta: ExifData | null;
   previewUrl: string | null;
+  extractedText: string | null;
+  ocrConfidence: number | null;
 }
 
 export function DocumentUploadScreen() {
@@ -30,13 +33,21 @@ export function DocumentUploadScreen() {
     if (!file) return;
     setProcessing(true);
 
-    if (file.type === 'application/pdf') {
-      const pdfMeta = await extractPdfMetadata(file);
-      setPending({ file, fileType: 'pdf', pdfMeta, exifMeta: null, previewUrl: null });
-    } else {
-      const exifMeta = await extractExif(file);
-      setPending({ file, fileType: 'image', pdfMeta: null, exifMeta, previewUrl: URL.createObjectURL(file) });
-    }
+    const fileType: 'image' | 'pdf' = file.type === 'application/pdf' ? 'pdf' : 'image';
+    const pdfMeta = fileType === 'pdf' ? await extractPdfMetadata(file) : null;
+    const exifMeta = fileType === 'image' ? await extractExif(file) : null;
+    const previewUrl = fileType === 'image' ? URL.createObjectURL(file) : null;
+    const ocrResult = await extractDocumentText(file, fileType);
+
+    setPending({
+      file,
+      fileType,
+      pdfMeta,
+      exifMeta,
+      previewUrl,
+      extractedText: ocrResult?.text || null,
+      ocrConfidence: ocrResult?.confidence ?? null,
+    });
     setProcessing(false);
   };
 
@@ -64,6 +75,8 @@ export function DocumentUploadScreen() {
       exifGpsLat: pending.exifMeta?.gpsLat ?? undefined,
       exifGpsLng: pending.exifMeta?.gpsLng ?? undefined,
       exifCameraModel: pending.exifMeta?.cameraModel ?? undefined,
+      extractedText: pending.extractedText ?? undefined,
+      ocrConfidence: pending.ocrConfidence ?? undefined,
     });
 
     if (pending.previewUrl) URL.revokeObjectURL(pending.previewUrl);
@@ -99,7 +112,7 @@ export function DocumentUploadScreen() {
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
 
-        {processing ? <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Reading file metadata…</p> : null}
+        {processing ? <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Reading file metadata and text…</p> : null}
 
         {pending ? (
           <div className="card" style={{ marginTop: 16 }}>
@@ -129,6 +142,13 @@ export function DocumentUploadScreen() {
                   <MetaRow label="Location" value={`${pending.exifMeta.gpsLat.toFixed(4)}, ${pending.exifMeta.gpsLng.toFixed(4)}`} />
                 ) : null}
               </>
+            ) : null}
+
+            {pending.extractedText ? (
+              <MetaRow
+                label="Text extracted"
+                value={`${pending.extractedText.length} chars${pending.ocrConfidence != null ? ` · OCR confidence ${Math.round(pending.ocrConfidence)}%` : ''}`}
+              />
             ) : null}
 
             <div className="btn-row" style={{ flexDirection: 'column', marginTop: 12 }}>

@@ -50,6 +50,19 @@ export function DocumentViewerScreen() {
         ) : null}
         {document.exifCameraModel ? <MetaRow label="Camera" value={document.exifCameraModel} /> : null}
         {document.fileSizeBytes ? <MetaRow label="Size" value={`${(document.fileSizeBytes / 1024).toFixed(0)} KB`} /> : null}
+        {document.extractedText ? (
+          <MetaRow
+            label="Text extracted"
+            value={`${document.extractedText.length} chars${document.ocrConfidence != null ? ` · OCR ${Math.round(document.ocrConfidence)}%` : ''}`}
+          />
+        ) : null}
+
+        {document.extractedText ? (
+          <div className="card" style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)', margin: '0 0 6px' }}>Extracted text</p>
+            <p style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', margin: 0 }}>{document.extractedText}</p>
+          </div>
+        ) : null}
 
         <div className="btn-row" style={{ flexDirection: 'column', marginTop: 20 }}>
           {objectUrl ? (

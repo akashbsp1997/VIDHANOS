@@ -35,6 +35,21 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         navigateFallback: `${base}index.html`,
         cleanupOutdatedCaches: true,
+        // tesseract.js's OCR engine (~15MB WASM core + trained data) is fetched from its
+        // default CDN on first use (src/services/ocr/extractImageText.ts). Cache-first since
+        // these assets are immutable once fetched — this is what makes OCR work fully offline
+        // after the first successful run.
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }: { url: URL }) => /unpkg\.com|jsdelivr\.net|cdn\.jsdelivr/.test(url.hostname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'ocr-engine-cdn',
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
     }),
   ],

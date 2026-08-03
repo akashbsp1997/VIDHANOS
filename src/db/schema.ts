@@ -87,6 +87,10 @@ export interface DocumentRecord {
   exifGpsLat?: number;
   exifGpsLng?: number;
   exifCameraModel?: string;
+  /** Full text extracted on-device (pdf.js text layer, or tesseract.js OCR for images/scanned PDFs). */
+  extractedText?: string;
+  /** OCR confidence (0-100), only set when extractedText came from tesseract.js. */
+  ocrConfidence?: number;
   createdAt: number;
   updatedAt: number;
 }

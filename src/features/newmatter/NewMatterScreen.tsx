@@ -18,6 +18,8 @@ import { runInitialIntakeAnalysis, runIntakeFollowUp } from '@/services/ai/intak
 import { extractExif, type ExifData } from '@/services/fileMetadata/exifMeta';
 import { extractPdfMetadata, type PdfMetadata } from '@/services/fileMetadata/pdfMeta';
 import { generateImageThumbnail } from '@/services/fileMetadata/thumbnail';
+import { extractDocumentText } from '@/services/ocr';
+import { recommendForums } from '@/services/legal/forumRecommend';
 import { useIsOnline } from '@/services/network';
 
 type Step = 'upload' | 'incident' | 'forum-parties';
@@ -45,6 +47,8 @@ export function NewMatterScreen() {
 
   const [issueSummary, setIssueSummary] = useState('');
   const [userIntent, setUserIntent] = useState('');
+  const [extractedText, setExtractedText] = useState('');
+  const [claimAmount, setClaimAmount] = useState('');
 
   const [caseTitle, setCaseTitle] = useState('');
   const [caseType, setCaseType] = useState('');
@@ -79,7 +83,9 @@ export function NewMatterScreen() {
     const pdfMeta = fileType === 'pdf' ? await extractPdfMetadata(file) : null;
     const exifMeta = fileType === 'image' ? await extractExif(file) : null;
     const previewUrl = fileType === 'image' ? URL.createObjectURL(file) : null;
+    const ocrResult = await extractDocumentText(file, fileType);
     setPending({ file, fileType, pdfMeta, exifMeta, previewUrl });
+    setExtractedText(ocrResult?.text ?? '');
 
     const newDocumentId = generateId();
     const thumbnailBlob = fileType === 'image' ? await generateImageThumbnail(file) : undefined;
@@ -101,6 +107,8 @@ export function NewMatterScreen() {
       exifGpsLat: exifMeta?.gpsLat ?? undefined,
       exifGpsLng: exifMeta?.gpsLng ?? undefined,
       exifCameraModel: exifMeta?.cameraModel ?? undefined,
+      extractedText: ocrResult?.text || undefined,
+      ocrConfidence: ocrResult?.confidence ?? undefined,
     });
     setDocumentId(newDocumentId);
 
@@ -122,6 +130,9 @@ export function NewMatterScreen() {
       } catch (err) {
         setAiNotice(err instanceof Error ? err.message : 'Could not reach AI — continuing with manual entry.');
       }
+    } else if (ocrResult?.text) {
+      // No AI available — pre-fill the incident description from on-device OCR text instead of leaving it blank.
+      setIssueSummary(ocrResult.text.slice(0, 500));
     }
 
     setProcessing(false);
@@ -152,6 +163,21 @@ export function NewMatterScreen() {
       } catch (err) {
         setAiNotice(err instanceof Error ? err.message : 'Could not reach AI — continuing with manual entry.');
       }
+    } else {
+      // No AI available — fall back to a deterministic, rule-based forum suggestion (zero network).
+      const parsedAmount = Number(claimAmount.replace(/[^\d.]/g, ''));
+      const scored = recommendForums({
+        caseType: caseType.trim() || undefined,
+        subjectMatter: `${issueSummary} ${extractedText} ${userIntent}`.trim(),
+        claimAmount: Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : undefined,
+      });
+      const suggestions = scored
+        .filter((r) => r.eligible && r.score > 0)
+        .slice(0, 5)
+        .map((r) => ({ name: r.forum.name, reason: r.reasons.join('; ') || r.forum.description }));
+      setRecommendedForums(suggestions);
+      if (suggestions[0]) setForumName(suggestions[0].name);
+      if (!caseTitle.trim() && issueSummary.trim()) setCaseTitle(issueSummary.trim().slice(0, 80));
     }
 
     setProcessing(false);
@@ -271,6 +297,12 @@ export function NewMatterScreen() {
               value={userIntent}
               onChange={(e) => setUserIntent(e.target.value)}
               placeholder="e.g. Get a refund, file a complaint, seek compensation…"
+            />
+            <TextField
+              label="Claim amount, if any (₹, optional)"
+              value={claimAmount}
+              onChange={(e) => setClaimAmount(e.target.value)}
+              placeholder="e.g. 50000"
             />
             <Button label="Continue" onClick={onContinueFromIncident} loading={processing} disabled={!userIntent.trim()} />
           </>
