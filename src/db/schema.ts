@@ -156,6 +156,15 @@ export interface SettingsEntry {
   value: string;
 }
 
+export interface StudyProgress {
+  /** Matches a lesson id from the study tracker's static week plan. */
+  id: string;
+  completed: 0 | 1;
+  completedAt?: number;
+  notes?: string;
+  updatedAt: number;
+}
+
 export interface Draft {
   id: string;
   caseId: string;
@@ -179,6 +188,7 @@ export const db = new Dexie('vidhanos') as Dexie & {
   documentAnalyses: EntityTable<DocumentAnalysis, 'id'>;
   settings: EntityTable<SettingsEntry, 'key'>;
   drafts: EntityTable<Draft, 'id'>;
+  studyProgress: EntityTable<StudyProgress, 'id'>;
 };
 
 db.version(1).stores({
@@ -206,4 +216,19 @@ db.version(2).stores({
   documentAnalyses: 'id, documentId, caseId',
   settings: 'key',
   drafts: 'id, caseId',
+});
+
+db.version(3).stores({
+  clients: 'id, name',
+  opponents: 'id, name',
+  cases: 'id, clientId, nextHearingDate, caseStatus, [caseStatus+nextHearingDate]',
+  caseOpponents: 'id, caseId, opponentId, [caseId+opponentId]',
+  hearings: 'id, caseId, hearingDate, isDeadline, [caseId+hearingDate]',
+  documents: 'id, caseId, hearingId',
+  citations: 'id, caseId, indianKanoonDocId',
+  legalReferences: 'id, category',
+  documentAnalyses: 'id, documentId, caseId',
+  settings: 'key',
+  drafts: 'id, caseId',
+  studyProgress: 'id, completed',
 });

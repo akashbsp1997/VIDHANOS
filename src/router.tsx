@@ -90,6 +90,20 @@ export const router = createBrowserRouter([
         },
       },
       { path: '/settings', element: <SettingsScreen /> },
+      {
+        path: '/study',
+        lazy: async () => {
+          const { StudyTrackerScreen } = await import('@/features/studyTracker/StudyTrackerScreen');
+          return { Component: StudyTrackerScreen };
+        },
+      },
+      {
+        path: '/study/:lessonId',
+        lazy: async () => {
+          const { LessonScreen } = await import('@/features/studyTracker/LessonScreen');
+          return { Component: LessonScreen };
+        },
+      },
       { path: '*', element: <NotFoundScreen /> },
     ],
   },
